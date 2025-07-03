@@ -3,7 +3,7 @@ import keras
 from TFDWT.DWT3DFB import DWT3D, IDWT3D
 
 @tf.keras.utils.register_keras_serializable()
-class LSIVolterraMRAKernel3D(tf.keras.layers.Layer):
+class LSIVolterra3Dmra(tf.keras.layers.Layer):
     """ VolterraSys: Multidimensional linear and nonlinear Volterra kernels in natural and multiresolution bases.
         Copyright (C) 2025 Kishore Kumar Tarafdar
 
@@ -149,7 +149,7 @@ if __name__=='__main__':
     input_shape = (N, N, N, channels)  # Replace N with the actual size of x    #3D
     inputs = tf.keras.Input(shape=input_shape)
     # Apply the custom layer to the inputs
-    H = LSIVolterraMRAKernel3D(filters=1)
+    H = LSIVolterra3Dmra(filters=1)
     outputs = H(inputs)
     # Build the model
     model = tf.keras.Model(inputs=inputs, outputs=outputs)

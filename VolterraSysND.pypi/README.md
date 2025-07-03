@@ -7,3 +7,20 @@
 [![CUDA Version](https://img.shields.io/badge/cuda-12.5.1-green)](https://developer.nvidia.com/cuda-toolkit)
 [![MIT](https://img.shields.io/badge/license-GPLv3-deepgreen.svg?style=flat)](https://github.com/kkt-ee/VolterraSys/LICENSE)
 
+
+
+
+```python
+LSIVolterra1Dmra(filters=1, kernel_size=4, wave='haar')
+LSIVolterra2Dmra(filters=1, kernel_size=4, wave='haar')
+LSIVolterra3Dmra(filters=1, kernel_size=4, wave='haar')
+
+QSIVolterra1D(filters=1, kernel_size=4)
+QSIVolterraND(filters=1, kernel_size=4)
+
+QSIVolterra1Dmra(filters=1, kernel_size=4, wave='haar')
+QSIVolterra2Dmra(filters=1, kernel_size=4, wave='haar')
+QSIVolterra3Dmra(filters=1, kernel_size=4, wave='haar')
+```
+
+

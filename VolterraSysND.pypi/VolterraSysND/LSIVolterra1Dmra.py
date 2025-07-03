@@ -5,7 +5,7 @@ import keras
 from TFDWT.DWT1DFB import DWT1D, IDWT1D
 
 @tf.keras.utils.register_keras_serializable()
-class LSIVolterraMRAKernel1D(tf.keras.layers.Layer):
+class LSIVolterra1Dmra(tf.keras.layers.Layer):
     """ VolterraSys: Multidimensional linear and nonlinear Volterra kernels in natural and multiresolution bases.
         Copyright (C) 2025 Kishore Kumar Tarafdar
 
@@ -135,7 +135,7 @@ if __name__=='__main__':
     os.environ["CUDA_VISIBLE_DEVICES"]="-1"  
 
     ## Example 1    
-    lay = LSIVolterraMRAKernel1D(filters=1)
+    lay = LSIVolterra1Dmra(filters=1)
     ## sample batch input
     x = tf.constant([1,2,3,5,5,3,2,1], dtype=tf.float32)
     x = tf.constant([1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,1], dtype=tf.float32)
@@ -153,7 +153,7 @@ if __name__=='__main__':
     N, channels, filters = 4, 1, 1
     input_shape = (N, channels)  # Replace N with the actual size of x            #1D
     inputs = tf.keras.Input(shape=input_shape)
-    H = LSIVolterraMRAKernel1D(filters=1)
+    H = LSIVolterra1Dmra(filters=1)
     outputs = H(inputs)
     # Build the model
     model = tf.keras.Model(inputs=inputs, outputs=outputs)
