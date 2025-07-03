@@ -11,16 +11,16 @@
 
 
 ```python
-LSIVolterra1Dmra(filters=1, kernel_size=4, wave='haar')
-LSIVolterra2Dmra(filters=1, kernel_size=4, wave='haar')
-LSIVolterra3Dmra(filters=1, kernel_size=4, wave='haar')
+LSIVolterra1D(filters=1, kernel_size=4, wave='haar')
+LSIVolterra2D(filters=1, kernel_size=4, wave='haar')
+LSIVolterra3D(filters=1, kernel_size=4, wave='haar')
 
 QSIVolterra1D(filters=1, kernel_size=4)
 QSIVolterraND(filters=1, kernel_size=4)
 
-QSIVolterra1Dmra(filters=1, kernel_size=4, wave='haar')
-QSIVolterra2Dmra(filters=1, kernel_size=4, wave='haar')
-QSIVolterra3Dmra(filters=1, kernel_size=4, wave='haar')
+QSIVolterra1D(filters=1, kernel_size=4, wave='haar')
+QSIVolterra2D(filters=1, kernel_size=4, wave='haar')
+QSIVolterra3D(filters=1, kernel_size=4, wave='haar')
 ```
 
 The argument ```wave=None``` for natural domain computations
