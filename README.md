@@ -23,4 +23,5 @@ QSIVolterra2Dmra(filters=1, kernel_size=4, wave='haar')
 QSIVolterra3Dmra(filters=1, kernel_size=4, wave='haar')
 ```
 
+The argument ```wave=None``` for natural domain computations
 
