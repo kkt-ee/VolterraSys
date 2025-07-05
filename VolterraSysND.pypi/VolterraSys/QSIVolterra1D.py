@@ -3,12 +3,32 @@ from TFDWT.DWT1DFB import DWT1D, IDWT1D
 from TFDWT.DWT2DFB import DWT2D, IDWT2D
 
 @tf.keras.utils.register_keras_serializable()
-class QSIVolterra1Dmra(tf.keras.layers.Layer):
+class QSIVolterra1D(tf.keras.layers.Layer): 
+    """ Natural and MRA support
+        VolterraSys: Multidimensional linear and nonlinear Volterra kernels in natural and multiresolution bases.
+        Copyright (C) 2025 Kishore Kumar Tarafdar
+
+        This program is free software: you can redistribute it and/or modify
+        it under the terms of the GNU General Public License as published by
+        the Free Software Foundation, either version 3 of the License, or
+        (at your option) any later version.
+
+        This program is distributed in the hope that it will be useful,
+        but WITHOUT ANY WARRANTY; without even the implied warranty of
+        MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+        GNU General Public License for more details.
+
+        You should have received a copy of the GNU General Public License
+        along with this program.  If not, see <https://www.gnu.org/licenses/>. 
+
+    --@KKT@03Jul2025"""
     def __init__(self, filters=1, kernel_size=4, wave='haar', **kwargs):
         super().__init__(**kwargs)
         self.L = kernel_size
         self.filters = filters
         self.wave = wave
+        if self.wave is not None: self.mra = True
+        else: self.mra = False
         # self.dwt2 = DWT2D(self.wave, clean=False)
         # self.idwt1 = IDWT1D(self.wave, clean=False)
 
@@ -24,6 +44,32 @@ class QSIVolterra1Dmra(tf.keras.layers.Layer):
             trainable=True,
             name='UIR_kernel')
         super().build(input_shape)
+    
+    # def make_h2(self):
+    #     # Quadratic kernel outer product: (L, channels) x (L, channels) -> (L, L, channels)
+    #     h2 = tf.einsum('ico,jco->ijco', self.h, self.h)  # (L, L, channels)
+    #     self.h2 = h2
+    #     # Pad to (N, N, channels)
+    #     paddings = [
+    #         [0, self.N - self.L],
+    #         [0, self.N - self.L],
+    #         [0, 0],
+    #         [0, 0]
+    #     ]
+    #     h2_padded = tf.pad(h2, paddings, mode='CONSTANT', constant_values=0)
+    #     # self.h2_padded = h2_padded
+    #     ## creating h[n-k1,n-k2]
+    #     # N = Npoint
+    #     n = tf.range(self.N)
+    #     # Create circular indices for all possible shifts
+    #     # row_indices = tf.math.mod(n[:, tf.newaxis] - tf.range(N), L)  # [N, N]
+    #     row_indices = tf.math.mod(n[:, tf.newaxis] - n, self.N)
+    #     h2_rows_shifted = tf.gather(h2_padded, row_indices, axis=0)         # [N, N, N]
+    #     h2_columns_shifted = tf.gather(h2_rows_shifted, row_indices,   # [N, N, N]
+    #                                     axis=2, batch_dims=1)
+    #     # self.h2_shifted = h2_columns_shifted
+    #     # print('h2shifted', self.h2_shifted.shape)
+    #     return h2_columns_shifted
     
     def make_mra_h2(self):
         # Quadratic kernel outer product: (L, channels) x (L, channels) -> (L, L, channels)
@@ -47,7 +93,7 @@ class QSIVolterra1Dmra(tf.keras.layers.Layer):
         h2_rows_shifted = tf.gather(h2_padded, row_indices, axis=0)         # [N, N, N]
         h2_columns_shifted = tf.gather(h2_rows_shifted, row_indices,   # [N, N, N]
                                         axis=2, batch_dims=1)
-        h2_shifted = h2_columns_shifted
+        self.h2_shifted = h2_columns_shifted
         # print('h2shifted', self.h2_shifted.shape)
 
         def make_mra_kernel(h_shifted):
@@ -66,9 +112,11 @@ class QSIVolterra1Dmra(tf.keras.layers.Layer):
             _ = tf.transpose(_, perm=[1,0,2])
             H = tf.reshape(_, [shape[0], shape[1], shape[2], shape[3], shape[4]])
             return H
-        H = make_mra_kernel(h2_shifted)
-        print('H',H.shape)
-        return H
+        
+        if self.mra == True:
+            return make_mra_kernel(self.h2_shifted)
+        else:
+            return self.h2_shifted
 
         # ## update this for batched multichannel
         # _ = tf.expand_dims(tf.cast(h2_shifted, dtype=tf.float32), axis=-1)
@@ -82,22 +130,34 @@ class QSIVolterra1Dmra(tf.keras.layers.Layer):
         # H[:,:,:,0]
 
     def call(self, x):
+        # self.x = x
         # x: (batch, N, channels)
-        x2 = tf.einsum('bic,bjc->bijc', x, x)  # (batch, N, N, channels)
-        print('x2', x2.shape)
+        self.x2 = tf.einsum('bic,bjc->bijc', x, x)  # (batch, N, N, channels)
+        print('x2', self.x2.shape)
+        
+
+        if self.mra==False:
+            return self.__call_compute_in_natural_domain(self.x2)
+        else:
+            return self.__call_compute_with_mra_kernel(self.x2)
+    
+    def __call_compute_with_mra_kernel(self, x2):
         α2 = DWT2D(self.wave, clean=False)(x2)
         print('α2', α2.shape)
         H = self.make_mra_h2()
         ## Fitlering
         β = tf.einsum('ijkco,bjkc->bio', H, α2)
         print('β', β.shape)
-
-        # print(x2.shape, self.h2_shifted.shape)
-        # y = tf.einsum('ijkco, bjkc->bio', self.h2_shifted, x2)
-        # y2 = self.idwt1(β)
         y2 = IDWT1D(self.wave, clean=False)(β)
         print('y2', y2.shape)
         return y2
+    
+    def __call_compute_in_natural_domain(self, x2):
+        y2 = tf.einsum('ijkco, bjkc->bio', self.h2_shifted, x2)
+        return y2
+
+    def sanity_check(self):
+        return self.__call_compute_with_mra_kernel(self.x2),  self.__call_compute_in_natural_domain(self.x2)  
 
     def get_filter(self):
         return self.h2
@@ -106,36 +166,31 @@ class QSIVolterra1Dmra(tf.keras.layers.Layer):
         config = super().get_config()
         config.update({
             'kernel_size': self.L,
+            'wavelet': self.wave,
             'filters': self.filters,
-            'wavelet': self.wave
+            'mra': self.mra
         })
         return config
 
         
 if __name__ =='__main__':
     import os
-    os.environ["CUDA_VISIBLE_DEVICES"]="-1"    
-
-    # Define input shape and build the model for summary
-    N = 128
-    input_shape = (N, 1)  # Replace N with the actual size of x
+    os.environ["CUDA_VISIBLE_DEVICES"]="-1"   
+    ## Example
+    # Functional model
+    N, channels, filters = 8, 1, 1
+    input_shape = (N, channels)  # Replace N with the actual size of x            #1D
     inputs = tf.keras.Input(shape=input_shape)
-
-    # Create an instance of the custom layer
-    # h2 = np.array([[1, 2], 
-    #           [1, 3]]).astype(np.float32)
-    # H = TraceConv1Dio(kernel=tf.expand_dims(h2, axis=-1))
-    # (tf.expand_dims(tf.expand_dims(x2,axis=0),axis=-1))
-
-    #conv1d_filters=32, conv1d_kernel_size=3, 
-    #  conv2d_filters=32, conv2d_kernel_size=3)
-
-    # Apply the custom layer to the inputs
-    H = QSIVolterra1Dmra()
+    H = QSIVolterra1D(filters=filters)
     outputs = H(inputs)
-
     # Build the model
     model = tf.keras.Model(inputs=inputs, outputs=outputs)
-
-    # Print the model summary
+    model.compile(optimizer='adam', loss='mse', jit_compile=False)
     model.summary()
+    ## 1D Random data
+    x = tf.random.normal((1, N, 1))
+    y = tf.random.normal((1, N, 1))
+    # Training loop for 5 epochs
+    epochs=5
+    # for epoch in range(5):
+    history = model.fit(x, y, epochs=5, verbose=1) 

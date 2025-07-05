@@ -1,9 +1,10 @@
 import tensorflow as tf
 import keras
 from TFDWT.DWT3DFB import DWT3D, IDWT3D
+from VolterraSys.LSIVolterraNDlayout import LSIVolterraNDlayout
 
 @tf.keras.utils.register_keras_serializable()
-class LSIVolterra3Dmra(tf.keras.layers.Layer):
+class LSIVolterra3D(LSIVolterraNDlayout):
     """ VolterraSys: Multidimensional linear and nonlinear Volterra kernels in natural and multiresolution bases.
         Copyright (C) 2025 Kishore Kumar Tarafdar
 
@@ -27,27 +28,9 @@ class LSIVolterra3Dmra(tf.keras.layers.Layer):
        Output: Shift invariant linear monomial y1, i.e., m=1
 
     --@KKT@03Jul2025"""
-    
     def __init__(self, filters=1, kernel_size=4, wave='haar', **kwargs):
-        super().__init__(**kwargs)
-        self.L = kernel_size
-        self.wave = wave
-        self.filters = filters
-    
-    def build(self, input_shape):
-        # input_shape: (batch_size, N, N, channels)
-        self.N = input_shape[1]
-        self.channels = input_shape[-1]
+        super().__init__(filters=filters, kernel_size=kernel_size, wave=wave, **kwargs)
 
-        kernel_shape = (self.L, self.L, self.L, input_shape[-1], self.filters)
-        # kernel_shape = (self.L, self.L, input_shape[-1])
-        self.h1 = self.add_weight(
-            shape=kernel_shape,
-            initializer='glorot_uniform',
-            trainable=True,
-            # regularizer=self.kernel_regularizer,
-            name='kernel')
-        super().build(input_shape)
         
     def __makeH(self):
         paddings = [
@@ -82,63 +65,63 @@ class LSIVolterra3Dmra(tf.keras.layers.Layer):
         h1_shifted = tf.gather_nd(h1, idx)  # If h1 has more dimensions, ND gathers all trailing dims
 
         # h1_shifted = tf.transpose(h1_shifted,perm=[0,2,3,1,4,5])  # n1,:,:,n2 01234 ## very important line!!
-        print('++', h1_shifted.shape)
+        # print('++', h1_shifted.shape)
+        self.h1_shifted = h1_shifted
+        if self.mra == False: return self.h1_shifted
+        else:                      
+            def dwtmra(h1_shifted):
+                # ### second vectorized upgrade!! not matching
+                # # h1_shifted: (N, N, N, N, in_channels, out_channels)
+                N, in_channels, out_channels = self.N, self.channels, self.filters
+                num_io = in_channels * out_channels
 
-        
-        def dwtmra(h1_shifted):
-            # ### second vectorized upgrade!! not matching
-            # # h1_shifted: (N, N, N, N, in_channels, out_channels)
-            N, in_channels, out_channels = self.N, self.channels, self.filters
-            num_io = in_channels * out_channels
+                # Flatten (in, out) for DWT2D
+                hflat = tf.reshape(h1_shifted, (N, N, N, N, N, N, num_io))
+                hflat_reshape = tf.reshape(hflat, (N*N*N, N, N, N, num_io))
 
-            # Flatten (in, out) for DWT2D
-            hflat = tf.reshape(h1_shifted, (N, N, N, N, N, N, num_io))
-            hflat_reshape = tf.reshape(hflat, (N*N*N, N, N, N, num_io))
+                dwt3d = DWT3D(self.wave, clean=False)
+                x1 = dwt3d(tf.cast(hflat_reshape, tf.float32))
+                x1r = tf.reshape(x1, (N, N, N, N, N, N, num_io))
 
-            dwt3d = DWT3D(self.wave, clean=False)
-            x1 = dwt3d(tf.cast(hflat_reshape, tf.float32))
-            x1r = tf.reshape(x1, (N, N, N, N, N, N, num_io))
+                # Transpose for columnplanewise DWT2D
+                x1T = tf.transpose(x1r, [3, 4, 5, 0, 1, 2, 6])     # <--- This is the key fix
+                x1T_reshape = tf.reshape(x1T, (N*N*N, N, N, N, num_io))
+                x2 = dwt3d(x1T_reshape)
+                x2r = tf.reshape(x2, (N, N, N, N, N, N, num_io))
 
-            # Transpose for columnplanewise DWT2D
-            x1T = tf.transpose(x1r, [3, 4, 5, 0, 1, 2, 6])     # <--- This is the key fix
-            x1T_reshape = tf.reshape(x1T, (N*N*N, N, N, N, num_io))
-            x2 = dwt3d(x1T_reshape)
-            x2r = tf.reshape(x2, (N, N, N, N, N, N, num_io))
-
-            # Transpose back
-            HT = tf.transpose(x2r, [3, 4, 5, 0, 1, 2, 6])
-            HT = tf.reshape(HT, (N, N, N, N, N, N, in_channels, out_channels))
-            return HT
-        
-        return dwtmra(h1_shifted)    
+                # Transpose back
+                HT = tf.transpose(x2r, [3, 4, 5, 0, 1, 2, 6])
+                HT = tf.reshape(HT, (N, N, N, N, N, N, in_channels, out_channels))
+                return HT
+            
+            return dwtmra(h1_shifted)   
 
     def call(self, x):
+        self.x = x
+        if self.mra==True: return self._call_with_mra_kernel(x)   
+        else: return self._call_in_natural_domain(x)   
 
-        # HT = self.__getH()
-
+    def _call_with_mra_kernel(self, x):
         α = DWT3D(self.wave, clean=False)(tf.cast(x, dtype=tf.float32))
         # α.shape
-
         H = self.__makeH()
         ## convolution like in wavelet domain
-        β = tf.einsum('bijkc,uvwijkco->buvwco', α, H)
-        β = tf.einsum('buvwco->buvwo',β)
+        β = tf.einsum('bijkc,uvwijkco->buvwo', α, H)
+        # β = tf.einsum('buvwco->buvwo',tmpβ)
         # β
         y = IDWT3D(self.wave, clean=False)(β)
-
         # ynatural = tf.einsum('bijc,uijv->buvc', x, tf.cast(self.h_shifted, tf.float32))[0,:,:,0]
-        
         return y#, ynatural
 
+    def _call_in_natural_domain(self, x):
+        h1_shifted = self.__makeH() ##dummy!!
+        return tf.einsum('bijkc,uvwijkco->buvwo', x, self.h1_shifted)
+
+    def sanity_check(self):
+        return self._call_with_mra_kernel(self.x), self._call_in_natural_domain(self.x)  
+
     
-    def get_config(self):
-        config = super().get_config()
-        config.update({
-            'kernel_size': self.L,
-            'wavelet': self.wave,
-            'filters': self.filters,
-        })
-        return config
+
 
 if __name__=='__main__':
     import os
@@ -149,7 +132,8 @@ if __name__=='__main__':
     input_shape = (N, N, N, channels)  # Replace N with the actual size of x    #3D
     inputs = tf.keras.Input(shape=input_shape)
     # Apply the custom layer to the inputs
-    H = LSIVolterra3Dmra(filters=1)
+    H = LSIVolterra3D(filters=1)
+    H = LSIVolterra3D(filters=1, wave=None)
     outputs = H(inputs)
     # Build the model
     model = tf.keras.Model(inputs=inputs, outputs=outputs)
