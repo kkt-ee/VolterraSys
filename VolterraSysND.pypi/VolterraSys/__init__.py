@@ -16,6 +16,12 @@
     along with this program.  If not, see <https://www.gnu.org/licenses/>.   
 """
 
+
+"""
+## A shift variant kernel
+from VolterraSys.LSVariantVolterra1D import LSVariantVolterra1D
+
+## Shift invariant LSI and QSI Volterra kernel
 from VolterraSys.LSIVolterra1D import LSIVolterra1D
 from VolterraSys.LSIVolterra2D import LSIVolterra2D
 from VolterraSys.LSIVolterra3D import LSIVolterra3D
@@ -44,3 +50,6 @@ LSIVolterra3D(filters=1, kernel_size=4, wave=None)
 QSIVolterra1D(filters=1, kernel_size=4, wave=None)
 QSIVolterra2D(filters=1, kernel_size=4, wave=None)
 QSIVolterra3D(filters=1, kernel_size=4, wave=None)
+"""
+
+__version__="0.0.1"
