@@ -62,16 +62,16 @@ class LSVariantVolterra1D(tf.keras.layers.Layer):
 
     def __compute_output_with_mra_kernel(self, x):
         HT = self.__make_H()
-        print(HT.shape,'HT')
+        # print(HT.shape,'HT')
         ## l-axis below --->l and ^v
         
         ## H[v,l] 
         α = DWT1D(self.wave, clean=False)(x)
         # print('α = ', α.shape)
-        print('HT and α', HT.shape, α.shape)
+        # print('HT and α', HT.shape, α.shape)
         β = tf.einsum('bic,uico->buo',α, HT) #HT and α (16, 4, 1, 1) (None, 4, 1)
         # β = tf.einsum('buco->buo',β)
-        print('β', β.shape)
+        # print('β', β.shape)
 
         # HTα = HT * α
         # print(HTα.shape, '\n', tf.squeeze(HTα).numpy())
@@ -98,7 +98,7 @@ class LSVariantVolterra1D(tf.keras.layers.Layer):
             
             # Combine channels and filters: shape becomes (Ny, N, in_channels * filters)
             h1_reshaped = tf.reshape(self.h1, [Ny, N, -1])
-            print(h1_reshaped.shape, 'h1_reshaped')
+            # print(h1_reshaped.shape, 'h1_reshaped')
 
             # Apply DWT1D twice
             dwt_layer1 = DWT1D(self.wave, clean=False)
@@ -116,7 +116,7 @@ class LSVariantVolterra1D(tf.keras.layers.Layer):
 
             # Reshape back to (Ny, N, in_channels, filters)
             H = tf.reshape(tmp_H, [self.h1.shape[0], self.h1.shape[1], self.h1.shape[2], self.h1.shape[3]])
-            print(H.shape,'in mra kernel HT')
+            # print(H.shape,'in mra kernel HT')
             return H
         
         if self.mra == True:
@@ -129,7 +129,8 @@ class LSVariantVolterra1D(tf.keras.layers.Layer):
         config.update({
             'Ny': self.Ny,
             'wavelet': self.wave,
-            'filters': self.filters
+            'filters': self.filters,
+            'mra': self.mra
         })
         return config
 

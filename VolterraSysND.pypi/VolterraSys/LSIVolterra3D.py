@@ -128,20 +128,20 @@ if __name__=='__main__':
     os.environ["CUDA_VISIBLE_DEVICES"]="-1"  
     ## Example
     # Functional model
-    N, channels, filters = 4, 1, 1
+    N, channels, filters = 2, 3, 6
     input_shape = (N, N, N, channels)  # Replace N with the actual size of x    #3D
     inputs = tf.keras.Input(shape=input_shape)
     # Apply the custom layer to the inputs
-    H = LSIVolterra3D(filters=1)
-    H = LSIVolterra3D(filters=1, wave=None)
+    H = LSIVolterra3D(filters=filters)
+    H = LSIVolterra3D(filters=filters, wave=None)
     outputs = H(inputs)
     # Build the model
     model = tf.keras.Model(inputs=inputs, outputs=outputs)
     model.compile(optimizer='adam', loss='mse', jit_compile=False)
     model.summary()
     ## 3D Random data
-    inputs_data = tf.random.normal((1, N, N, N, 1))
-    targets = tf.random.normal((1, N, N, N, 1))
+    inputs_data = tf.random.normal((1, N, N, N, channels))
+    targets = tf.random.normal((1, N, N, N, filters))
     # Training loop for 5 epochs
     epochs=5
     # for epoch in range(5):
