@@ -1,38 +1,41 @@
-
-#%% Shift invariant Linear (m=1) Multiresolution Volterra Kernel
 import tensorflow as tf
-import keras
+# import keras
 from TFDWT.DWT1DFB import DWT1D, IDWT1D
 from VolterraSys.LSIVolterraNDlayout import LSIVolterraNDlayout
 
 @tf.keras.utils.register_keras_serializable()
 class LSIVolterra1D(LSIVolterraNDlayout):
-    """ LSI 1D mra and natural kernel
+    """ LSI 1D wavelet and natural basis kernel
     
-        VolterraSys: Multidimensional linear and nonlinear Volterra kernels in natural and multiresolution bases.
-        Copyright (C) 2025 Kishore Kumar Tarafdar
-
-        This program is free software: you can redistribute it and/or modify
-        it under the terms of the GNU General Public License as published by
-        the Free Software Foundation, either version 3 of the License, or
-        (at your option) any later version.
-
-        This program is distributed in the hope that it will be useful,
-        but WITHOUT ANY WARRANTY; without even the implied warranty of
-        MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-        GNU General Public License for more details.
-
-        You should have received a copy of the GNU General Public License
-        along with this program.  If not, see <https://www.gnu.org/licenses/>.   
+    VolterraSys: Multidimensional linear and nonlinear Volterra kernel layers in wavelet and natural bases.
+    Copyright 2025 Kishore Kumar Tarafdar.
+    Licensed under the Apache License, Version 2.0. See LICENSE for details.
         
-    
-    Shift invariant Linear (m=1) Multiresolution Volterra Kernel
-        Input: sequence x[n]
-        Output: Shift invariant linear monomial y1, i.e., m=1
+    Linear (m=1) shift invariant multiresolution Volterra kernel for sequences
+    Input: sequence x[n]
+    Output: Linear shift invariant sequence monomial y1[n]
 
-    --@KKT@04Jul2025"""
+    --@KKT@04Jul2025 """
     def __init__(self, filters=1, kernel_size=4, wave='haar', **kwargs):
         super().__init__(filters=filters, kernel_size=kernel_size, wave=wave, **kwargs)
+
+    def build(self, input_shape):
+        if self.mra:
+            N = int(input_shape[1])
+
+            def initialize_synthesis(shape, dtype=None):
+                idwt_input = IDWT1D(self.wave, clean=False)
+                idwt_input.build((None, N, 1))
+                return tf.cast(idwt_input.S, dtype or tf.float32)
+
+            self.S_input = self.add_weight(
+                name='input_synthesis',
+                shape=(N, N),
+                initializer=initialize_synthesis,
+                trainable=False,
+            )
+
+        super().build(input_shape)
 
     def __makeH(self):
         paddings = [
@@ -55,7 +58,7 @@ class LSIVolterra1D(LSIVolterraNDlayout):
         if self.mra==False: return h1_shifted ## natural shifted kernel
         else: ## shifted MRA kernel
 
-            # ### PERFECT but slow
+            # ### PERFECT but slow (might have a bug for bior wavelets)
             # HT = tf.stack([
             #         tf.concat([
             #             tf.transpose(DWT1D(self.wave, clean=False)(tf.transpose(DWT1D(self.wave, clean=False)(hshifted[...,i:i+1,j]), perm=[1,0,2])),perm=[1,0,2]) for i in range(self.channels)
@@ -68,7 +71,15 @@ class LSIVolterra1D(LSIVolterraNDlayout):
             dwt1 = DWT1D(self.wave, clean=False)
             tmp_h_for_dwt = tf.reshape(h1_shifted, (self.N, self.N, self.channels * self.filters))
             ## x is dummy here
-            x = dwt1(tmp_h_for_dwt)           # (N, dwt_len, in_channels*out_channels)
+            # the following line is a bug for bior wavelets
+            # x = dwt1(tmp_h_for_dwt)           # (N, dwt_len, in_channels*out_channels)
+
+            ##bug fix----15 sep 2026
+            x = tf.einsum('ric,il->rlc', tmp_h_for_dwt, self.S_input)
+            #---------------------
+
+
+
             # 3. Transpose to swap axes 0 and 1 ("rows" and "columns")
             xT = tf.transpose(x, perm=[1, 0, 2])  # (N', N, in_channels * out_channels)
 
@@ -79,7 +90,9 @@ class LSIVolterra1D(LSIVolterraNDlayout):
             x2T = tf.transpose(x2, perm=[1, 0, 2])  # (N'', N', in_channels * out_channels)
 
             # 6. Reshape back to (N'', N', in_channels, out_channels)
-            HT = tf.reshape(x2T, (self.N, self.N, self.channels, self.channels))
+            # HT = tf.reshape(x2T, (self.N, self.N, self.channels, self.channels))
+            # test if above line is a bug by disabling above and enabling below (dont delete any line now just comment out)
+            HT = tf.reshape(x2T, (self.N, self.N, self.channels, self.filters))
             return HT
 
     def call(self, x):
@@ -134,3 +147,23 @@ if __name__=='__main__':
     # for epoch in range(5):
     history = model.fit(x, y, epochs=5, verbose=1)
     del x, y, inputs, outputs
+
+    ## Example 1    
+    lay = LSIVolterra1D(filters=1, wave='haar')
+    lay = LSIVolterra1D(filters=1, wave='db5')
+    lay = LSIVolterra1D(filters=1, wave='bior1.3')
+    ## sample batch input
+    # x = tf.constant([1,2,3,5,5,3,2,1], dtype=tf.float32)
+    # x = tf.constant([1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,1], dtype=tf.float32)
+    # _ = tf.expand_dims(tf.expand_dims(x,axis=-1),axis=0)
+    x = tf.random.normal((1, 128, 1))
+    print("x shape:", x.shape)
+    y = lay(x)
+    print("y shape:", y.shape)
+
+    # check if the outputs from both methods are the same
+    import matplotlib.pyplot as plt
+    y, ynat = lay.sanity_check()
+    plt.figure(figsize=(9,2))
+    plt.plot(tf.squeeze(y).numpy(), 'o')
+    plt.plot(tf.squeeze(ynat).numpy(), '+')

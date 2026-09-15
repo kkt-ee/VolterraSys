@@ -1,0 +1,31 @@
+# git remote add origin git@github.com:ksatva/attentions.git
+
+/.*
+/!.gitignore
+/updateGit
+**/.*
+!**/.gitignore
+**/__pycache__/
+**/.ipynb_checkpoints/
+
+# build/
+dist/
+*.egg-info/
+scripts/
+
+/CheckThenDelete
+/.ipynb_checkpoints/
+# /MakingAndMaintenenceOfIIRMutltidimensionalLayers.ipynb/.ipynb_checkpoints/
+/VolterraSys/__pycache__
+/save.ckpt
+/TryChapter_U_naturalQSIVolterraAtlas_fast_v00.ipynb
+
+
+Volterra-torch
+math-Volterra.pdf
+viewer
+deprecated
+VolterraSysD.pypi/.gitignore
+dependencies
+
+MakingOf.../Making.archive

@@ -1,26 +1,16 @@
 import tensorflow as tf
-import string
+# import string
 
 @tf.keras.utils.register_keras_serializable()
 class QSIVolterraNDlayout(tf.keras.layers.Layer):
-    """ QSI Volterra ND [1D, 2D, 3D] kernels in natural domain
+    """ Quadratic (m=2) shift invariant multiresolution Volterra kernel layout for D-dimensional data 
+    (present support 1D, 2D, 3D)
 
-        VolterraSys: Multidimensional linear and nonlinear Volterra kernels in natural and multiresolution bases.
-        Copyright (C) 2025 Kishore Kumar Tarafdar
-
-        This program is free software: you can redistribute it and/or modify
-        it under the terms of the GNU General Public License as published by
-        the Free Software Foundation, either version 3 of the License, or
-        (at your option) any later version.
-
-        This program is distributed in the hope that it will be useful,
-        but WITHOUT ANY WARRANTY; without even the implied warranty of
-        MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-        GNU General Public License for more details.
-
-        You should have received a copy of the GNU General Public License
-        along with this program.  If not, see <https://www.gnu.org/licenses/>.   
-    """
+    VolterraSys: Multidimensional linear and nonlinear Volterra kernel layers in wavelet and natural bases.
+    Copyright 2025 Kishore Kumar Tarafdar.
+    Licensed under the Apache License, Version 2.0. See LICENSE for details.
+    
+    --kkt@3Jul2025"""
     def __init__(self, filters=1, kernel_size=4, wave='haar', **kwargs):
         super().__init__(**kwargs)
         self.L = kernel_size
@@ -151,10 +141,10 @@ class QSIVolterraNDlayout(tf.keras.layers.Layer):
             h2_padded = tf.pad(self.h2, paddings, mode='CONSTANT', constant_values=0)
         elif self.dim >=3: ## use custom padding if dim 3 or above
             h2_padded = self.tf_pad_nd_volterra(self.h2, self.N, self.L, self.dim)
-        print('h2_padded', h2_padded.shape, h2_padded.dtype)
+        # print('h2_padded', h2_padded.shape, h2_padded.dtype)
      
         h2_shifted = self.get_nd_shifted_h2(h2_padded)
-        print('h2shifted', h2_shifted.shape)
+        # print('h2shifted', h2_shifted.shape)
         return h2_shifted     
 
     def call(self, x):

@@ -5,27 +5,15 @@ from VolterraSys.LSIVolterraNDlayout import LSIVolterraNDlayout
 
 @tf.keras.utils.register_keras_serializable()
 class LSIVolterra3D(LSIVolterraNDlayout):
-    """ VolterraSys: Multidimensional linear and nonlinear Volterra kernels in natural and multiresolution bases.
-        Copyright (C) 2025 Kishore Kumar Tarafdar
+    """ LSI 3D wavelet and natural basis kernel
 
-        This program is free software: you can redistribute it and/or modify
-        it under the terms of the GNU General Public License as published by
-        the Free Software Foundation, either version 3 of the License, or
-        (at your option) any later version.
-
-        This program is distributed in the hope that it will be useful,
-        but WITHOUT ANY WARRANTY; without even the implied warranty of
-        MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-        GNU General Public License for more details.
-
-        You should have received a copy of the GNU General Public License
-        along with this program.  If not, see <https://www.gnu.org/licenses/>. 
+    VolterraSys: Multidimensional linear and nonlinear Volterra kernel layers in wavelet and natural bases.
+    Copyright 2025 Kishore Kumar Tarafdar.
+    Licensed under the Apache License, Version 2.0. See LICENSE for details.
         
-        
-    
-    Shift invariant Linear (m=1) Multiresolution Volterra Kernel
-       Input: volumetric image x[n1,n2,n3]
-       Output: Shift invariant linear monomial y1, i.e., m=1
+    Linear (m=1) shift invariant multiresolution Volterra kernel for volumetric images
+    Input: volumetric image x[n1,n2,n3]
+    Output: Linear shift invariant volumetric monomial y1[n1,n2,n3]
 
     --@KKT@03Jul2025"""
     def __init__(self, filters=1, kernel_size=4, wave='haar', **kwargs):

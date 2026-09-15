@@ -4,23 +4,12 @@ from TFDWT.DWT2DFB import DWT2D, IDWT2D
 
 @tf.keras.utils.register_keras_serializable()
 class QSIVolterra1D(tf.keras.layers.Layer): 
-    """ Natural and MRA support
-        VolterraSys: Multidimensional linear and nonlinear Volterra kernels in natural and multiresolution bases.
-        Copyright (C) 2025 Kishore Kumar Tarafdar
-
-        This program is free software: you can redistribute it and/or modify
-        it under the terms of the GNU General Public License as published by
-        the Free Software Foundation, either version 3 of the License, or
-        (at your option) any later version.
-
-        This program is distributed in the hope that it will be useful,
-        but WITHOUT ANY WARRANTY; without even the implied warranty of
-        MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-        GNU General Public License for more details.
-
-        You should have received a copy of the GNU General Public License
-        along with this program.  If not, see <https://www.gnu.org/licenses/>. 
-
+    """ Quadratic (m=2) shift invariant multiresolution Volterra kernel for sequences
+        
+    VolterraSys: Multidimensional linear and nonlinear Volterra kernel layers in wavelet and natural bases.
+    Copyright 2025 Kishore Kumar Tarafdar.
+    Licensed under the Apache License, Version 2.0. See LICENSE for details.
+    
     --@KKT@03Jul2025"""
     def __init__(self, filters=1, kernel_size=4, wave='haar', **kwargs):
         super().__init__(**kwargs)
@@ -133,7 +122,7 @@ class QSIVolterra1D(tf.keras.layers.Layer):
         # self.x = x
         # x: (batch, N, channels)
         self.x2 = tf.einsum('bic,bjc->bijc', x, x)  # (batch, N, N, channels)
-        print('x2', self.x2.shape)
+        # print('x2', self.x2.shape)
         
 
         if self.mra==False:
@@ -143,13 +132,13 @@ class QSIVolterra1D(tf.keras.layers.Layer):
     
     def __call_compute_with_mra_kernel(self, x2):
         α2 = DWT2D(self.wave, clean=False)(x2)
-        print('α2', α2.shape)
+        # print('α2', α2.shape)
         H = self.make_mra_h2()
         ## Fitlering
         β = tf.einsum('ijkco,bjkc->bio', H, α2)
-        print('β', β.shape)
+        # print('β', β.shape)
         y2 = IDWT1D(self.wave, clean=False)(β)
-        print('y2', y2.shape)
+        # print('y2', y2.shape)
         return y2
     
     def __call_compute_in_natural_domain(self, x2):

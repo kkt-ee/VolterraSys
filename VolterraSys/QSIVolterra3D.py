@@ -5,23 +5,12 @@ from VolterraSys.QSIVolterraNDlayout import QSIVolterraNDlayout
 
 @tf.keras.utils.register_keras_serializable()
 class QSIVolterra3D(QSIVolterraNDlayout):
-    """ QSI Volterra 3D I/O in wavelet and in natural domain
+    """ Quadratic (m=2) shift invariant multiresolution Volterra kernel for volumetric data (3D)
 
-        VolterraSys: Multidimensional linear and nonlinear Volterra kernels in natural and multiresolution bases.
-        Copyright (C) 2025 Kishore Kumar Tarafdar
-
-        This program is free software: you can redistribute it and/or modify
-        it under the terms of the GNU General Public License as published by
-        the Free Software Foundation, either version 3 of the License, or
-        (at your option) any later version.
-
-        This program is distributed in the hope that it will be useful,
-        but WITHOUT ANY WARRANTY; without even the implied warranty of
-        MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-        GNU General Public License for more details.
-
-        You should have received a copy of the GNU General Public License
-        along with this program.  If not, see <https://www.gnu.org/licenses/>.   
+    VolterraSys: Multidimensional linear and nonlinear Volterra kernel layers in wavelet and natural bases.
+    Copyright 2025 Kishore Kumar Tarafdar.
+    Licensed under the Apache License, Version 2.0. See LICENSE for details.
+    
     --kkt@3Jul2025"""
     def __init__(self, filters=1, kernel_size=4, wave='haar', **kwargs):
         super().__init__(filters=filters, kernel_size=kernel_size, wave=wave, **kwargs)
@@ -31,7 +20,7 @@ class QSIVolterra3D(QSIVolterraNDlayout):
         self.h2 = self._make_h2()
         h2_shifted = self.make_h2_shifted_kernel()      
           
-        print('h2_shifted', h2_shifted.shape)
+        # print('h2_shifted', h2_shifted.shape)
         shape = tf.shape(h2_shifted) # ijk pqr stu co, for example (4, 4, 4, 4, 4, 4, 1, 1)
         _ = tf.reshape(h2_shifted, [shape[0]*shape[1]*shape[2]*shape[3]*shape[4]*shape[5], shape[6], shape[7] , shape[8], shape[9]*shape[10]])
         _ = DWT3D(self.wave, clean=False)(_) #stu
@@ -44,7 +33,7 @@ class QSIVolterra3D(QSIVolterraNDlayout):
         _ = DWT3D(self.wave, clean=False)(_) #ijk
         _ = tf.reshape(_, [shape[0], shape[1], shape[2], shape[3], shape[4], shape[5], shape[6], shape[7], shape[8], shape[9],shape[10]])
         H = tf.transpose(_, perm=[3,4,5, 0,1,2, 6,7,8,9,10])
-        print('H',H.shape)
+        # print('H',H.shape)
         return H
 
     def call(self, x):
@@ -70,17 +59,17 @@ class QSIVolterra3D(QSIVolterraNDlayout):
             _ = tf.reshape(_, [shape[0], shape[1], shape[2], shape[3], shape[4], shape[5], shape[6], shape[7]])
             return tf.transpose(_, perm=[0, 4,5,6, 1,2,3, 7])
         α2 = dwt6(x2)
-        print('α2', α2.shape)
+        # print('α2', α2.shape)
         H = self._make_h2_shifted_mra_kernel3()
         ## Fitlering
         β = tf.einsum('ijkpqrstuco,bpqrstuc->bijko', H, α2)
-        print('β', β.shape)
+        # print('β', β.shape)
 
         # print(x2.shape, self.h2_shifted.shape)
         # y = tf.einsum('ijkco, bjkc->bio', self.h2_shifted, x2)
         # y2 = self.idwt1(β)
         y2 = IDWT3D(self.wave, clean=False)(β)
-        print('y2', y2.shape)
+        # print('y2', y2.shape)
         return y2    
 
     def sanity_check(self):

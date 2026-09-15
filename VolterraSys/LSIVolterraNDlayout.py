@@ -1,33 +1,21 @@
-
-#%% Shift invariant Linear (m=1) Multiresolution Volterra Kernel
 import tensorflow as tf
-import keras
-from TFDWT.DWT1DFB import DWT1D, IDWT1D
+# import keras
+# from TFDWT.DWT1DFB import DWT1D, IDWT1D
 
 @tf.keras.utils.register_keras_serializable()
 class LSIVolterraNDlayout(tf.keras.layers.Layer):
-    """ VolterraSys: Multidimensional linear and nonlinear Volterra kernels in natural and multiresolution bases.
-        Copyright (C) 2025 Kishore Kumar Tarafdar
+    """ Linear shift invariant multiresolution Volterra kernel layout for D-dimensional data 
+    (present support 1D, 2D, 3D)
 
-        This program is free software: you can redistribute it and/or modify
-        it under the terms of the GNU General Public License as published by
-        the Free Software Foundation, either version 3 of the License, or
-        (at your option) any later version.
-
-        This program is distributed in the hope that it will be useful,
-        but WITHOUT ANY WARRANTY; without even the implied warranty of
-        MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-        GNU General Public License for more details.
-
-        You should have received a copy of the GNU General Public License
-        along with this program.  If not, see <https://www.gnu.org/licenses/>.   
+    VolterraSys: Multidimensional linear and nonlinear Volterra kernel layers in wavelet and natural bases.
+    Copyright 2025 Kishore Kumar Tarafdar.
+    Licensed under the Apache License, Version 2.0. See LICENSE for details.
         
-    
-    Shift invariant Linear (m=1) Multiresolution Volterra Kernel
-        Input: sequence x[n]
-        Output: Shift invariant linear monomial y1, i.e., m=1
+    Linear (m=1) shift invariant multiresolution Volterra kernel layout for D-dimensional input
+    Input: general D-dimensional signal x[n1,n2,...,nD]
+    Output: Linear shift invariant D-dimensional monomial y1[n1,n2,...,nD]
 
-    --@KKT@04Jul2025"""
+    --@KKT@04Jul2025 """
     
     def __init__(self, filters=1, kernel_size=4, wave='haar', **kwargs):
         super().__init__(**kwargs)
@@ -59,8 +47,7 @@ class LSIVolterraNDlayout(tf.keras.layers.Layer):
         config = super().get_config()
         config.update({
             'kernel_size': self.L,
-            'wavelet': self.wave,
+            'wave': self.wave,
             'filters': self.filters,
-            'mra': self.mra
         })
         return config

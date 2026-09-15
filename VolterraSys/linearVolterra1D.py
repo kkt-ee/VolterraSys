@@ -4,36 +4,25 @@ from TFDWT.DWT1DFB import DWT1D, IDWT1D
 #%% Shift invariant Linear (m=1) Multiresolution Volterra Kernel
 class LSVariantVolterra1D(tf.keras.layers.Layer):
     """
-        VolterraSys: Multidimensional linear and nonlinear Volterra kernels in natural and multiresolution bases.
-        Copyright (C) 2025 Kishore Kumar Tarafdar
-
-        This program is free software: you can redistribute it and/or modify
-        it under the terms of the GNU General Public License as published by
-        the Free Software Foundation, either version 3 of the License, or
-        (at your option) any later version.
-
-        This program is distributed in the hope that it will be useful,
-        but WITHOUT ANY WARRANTY; without even the implied warranty of
-        MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-        GNU General Public License for more details.
-
-        You should have received a copy of the GNU General Public License
-        along with this program.  If not, see <https://www.gnu.org/licenses/>.   
-        
+    VolterraSys: Multidimensional linear and nonlinear Volterra kernel layers in wavelet and natural bases.
+    Copyright 2025 Kishore Kumar Tarafdar.
+    Licensed under the Apache License, Version 2.0. See LICENSE for details.
     
-        Shift variant Linear (m=1) Multiresolution Volterra Kernel
-        Input: sequence x[n]
-        Output: Shift variant linear monomial y1, i.e., m=1
+    Linear (m=1) multiresolution Volterra Kernel (shift variant)
+    Input: sequence x[n]
+    Output: Linear monomial y1 (shift variant)
 
     --@KKT, 03Jul2025"""
     
-    def __init__(self, filters=1, Ny=16, wave='haar', mra=True, **kwargs):
+    def __init__(self, filters=1, Ny=16, wave='haar', **kwargs):
         super().__init__(**kwargs)
         # self.L = kernel_size
         self.wave = wave
+        if self.wave is None: self.mra = False
+        else: self.mra = True
         self.filters = filters
         self.Ny = Ny
-        self.mra = mra
+        # self.mra = mra
     
     def build(self, input_shape):
         # input_shape: (batch_size, N, N, channels)

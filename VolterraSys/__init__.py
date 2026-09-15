@@ -1,36 +1,27 @@
 """ॐ
-    VolterraSys: Multidimensional linear and nonlinear Volterra kernels in natural and multiresolution bases.
-    Copyright (C) 2025 Kishore Kumar Tarafdar
-
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU General Public License as published by
-    the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
-
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU General Public License for more details.
-
-    You should have received a copy of the GNU General Public License
-    along with this program.  If not, see <https://www.gnu.org/licenses/>.   
+    VolterraSys: Multidimensional linear and nonlinear Volterra kernel layers in wavelet and natural bases.
+    Copyright 2025 Kishore Kumar Tarafdar.
+    Licensed under the Apache License, Version 2.0. See LICENSE for details.
 """
 
 
 """
-## A shift variant kernel
-from VolterraSys.LSVariantVolterra1D import LSVariantVolterra1D
+## A linear kernel (shift variant)
+from VolterraSys.linearVolterra1D import LSVariantVolterra1D
 
-## Shift invariant LSI and QSI Volterra kernel
+
+## Linear (m=1) shift invariant (LSI) Volterra kernel layers in wavelet and natural bases
 from VolterraSys.LSIVolterra1D import LSIVolterra1D
 from VolterraSys.LSIVolterra2D import LSIVolterra2D
 from VolterraSys.LSIVolterra3D import LSIVolterra3D
+
+# Quadratic (m=2) shift invariant (QSI) Volterra kernel layers in wavelet and natural bases
 from VolterraSys.QSIVolterra1D import QSIVolterra1D
 from VolterraSys.QSIVolterra2D import QSIVolterra2D
 from VolterraSys.QSIVolterra3D import QSIVolterra3D
 
-## MRA kernels
-# default wave=haar
+## Multiresolution or orthogonal and biorthogonal wavelet domain kernel layers
+# default wave='haar' and supports wavelet families: 'db', 'sym', 'coif', 'bior', 'rbio'  
 LSIVolterra1D(filters=1, kernel_size=4, wave='haar')
 LSIVolterra2D(filters=1, kernel_size=4, wave='haar')
 LSIVolterra3D(filters=1, kernel_size=4, wave='haar')
@@ -41,7 +32,7 @@ QSIVolterra3D(filters=1, kernel_size=4, wave='haar')
 
 
 
-## Natural kenels
+## Natural domain kernels
 # The argument ```wave=None``` for natural domain computations
 LSIVolterra1D(filters=1, kernel_size=4, wave=None)
 LSIVolterra2D(filters=1, kernel_size=4, wave=None)
