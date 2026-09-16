@@ -7,7 +7,7 @@
 
 """
 ## A linear kernel (shift variant)
-from VolterraSys.linearVolterra1D import LSVariantVolterra1D
+from VolterraSys.LinearVolterra1D import LinearVolterra1D
 
 
 ## Linear (m=1) shift invariant (LSI) Volterra kernel layers in wavelet and natural bases
