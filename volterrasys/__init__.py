@@ -7,18 +7,18 @@
 
 """
 ## A linear kernel (shift variant)
-from VolterraSys.LinearVolterra1D import LinearVolterra1D
+from volterrasys.LinearVolterra1D import LinearVolterra1D
 
 
 ## Linear (m=1) shift invariant (LSI) Volterra kernel layers in wavelet and natural bases
-from VolterraSys.LSIVolterra1D import LSIVolterra1D
-from VolterraSys.LSIVolterra2D import LSIVolterra2D
-from VolterraSys.LSIVolterra3D import LSIVolterra3D
+from volterrasys.LSIVolterra1D import LSIVolterra1D
+from volterrasys.LSIVolterra2D import LSIVolterra2D
+from volterrasys.LSIVolterra3D import LSIVolterra3D
 
 # Quadratic (m=2) shift invariant (QSI) Volterra kernel layers in wavelet and natural bases
-from VolterraSys.QSIVolterra1D import QSIVolterra1D
-from VolterraSys.QSIVolterra2D import QSIVolterra2D
-from VolterraSys.QSIVolterra3D import QSIVolterra3D
+from volterrasys.QSIVolterra1D import QSIVolterra1D
+from volterrasys.QSIVolterra2D import QSIVolterra2D
+from volterrasys.QSIVolterra3D import QSIVolterra3D
 
 ## Multiresolution or orthogonal and biorthogonal wavelet domain kernel layers
 # default wave='haar' and supports wavelet families: 'db', 'sym', 'coif', 'bior', 'rbio'  
@@ -43,4 +43,4 @@ QSIVolterra2D(filters=1, kernel_size=4, wave=None)
 QSIVolterra3D(filters=1, kernel_size=4, wave=None)
 """
 
-__version__="0.0.1"
+__version__="0.0.2"

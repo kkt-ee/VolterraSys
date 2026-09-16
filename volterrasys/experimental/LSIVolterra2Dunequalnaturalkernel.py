@@ -1,19 +1,18 @@
 import tensorflow as tf
-import keras
+# import keras
 from TFDWT.DWT2DFB import DWT2D, IDWT2D
-from VolterraSys.LSIVolterraNDlayout import LSIVolterraNDlayout
+from volterrasys.LSIVolterraNDlayout import LSIVolterraNDlayout
 
 @tf.keras.utils.register_keras_serializable()
 class LSIVolterra2D(LSIVolterraNDlayout):
-    """ LSI 2D wavelet and natural basis kernel
-
+    """ 
     VolterraSys: Multidimensional linear and nonlinear Volterra kernel layers in wavelet and natural bases.
     Copyright 2025 Kishore Kumar Tarafdar.
     Licensed under the Apache License, Version 2.0. See LICENSE for details.
-        
-    Linear (m=1) shift invariant multiresolution Volterra kernel for images
-    Input: image x[n1,n2]
-    Output: Linear shift invariant image monomial y1[n1,n2]
+    
+    Linear (m=1) shift invariant multiresolution Volterra Kernel for images
+    Input: image x[n1,n2] (rectangular image)
+    Output: Linear shift invariant monomial y1[n1,n2]
 
     --@KKT@04Jul2025"""
     def __init__(self, filters=1, kernel_size=4, wave='haar', **kwargs):

@@ -37,14 +37,14 @@ pip install VolterraSys
 import tensorflow as tf
 
 # Linear shift invariant wavelet bases Volterra kernels
-from VolterraSys.LSIVolterra1D import LSIVolterra1D
-from VolterraSys.LSIVolterra2D import LSIVolterra2D
-from VolterraSys.LSIVolterra3D import LSIVolterra3D
+from volterrasys.LSIVolterra1D import LSIVolterra1D
+from volterrasys.LSIVolterra2D import LSIVolterra2D
+from volterrasys.LSIVolterra3D import LSIVolterra3D
 
 # Quadratic shift invariant wavelet bases Volterra kernels
-from VolterraSys.QSIVolterra1D import QSIVolterra1D
-from VolterraSys.QSIVolterra2D import QSIVolterra2D
-from VolterraSys.QSIVolterra3D import QSIVolterra3D
+from volterrasys.QSIVolterra1D import QSIVolterra1D
+from volterrasys.QSIVolterra2D import QSIVolterra2D
+from volterrasys.QSIVolterra3D import QSIVolterra3D
 
 # Natural-domain linear and quadratic kernels layer examples
 # Linear

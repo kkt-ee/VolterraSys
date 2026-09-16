@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "VolterraSys"
-version = "0.0.1"
+version = "0.0.2"
 authors = [
   { name="Kishore Kumar Tarafdar", email="kkt.compute@gmail.com" },
 ]
@@ -30,4 +30,4 @@ Homepage = "https://github.com/kkt-ee/VolterraSys"
 Issues = "https://github.com/kkt-ee/VolterraSys/issues"
 
 [tool.hatch.build.targets.wheel]
-packages = ["VolterraSys"]
+packages = ["volterrasys"]

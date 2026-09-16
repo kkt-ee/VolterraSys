@@ -1,7 +1,7 @@
 import tensorflow as tf
 # from TFDWT.DWT1DFB import DWT1D, IDWT1D
 from TFDWT.DWT2DFB import DWT2D, IDWT2D
-from VolterraSys.QSIVolterraNDlayout import QSIVolterraNDlayout
+from .QSIVolterraNDlayout import QSIVolterraNDlayout
 
 @tf.keras.utils.register_keras_serializable()
 class QSIVolterra2D(QSIVolterraNDlayout):

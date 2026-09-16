@@ -1,7 +1,7 @@
 import tensorflow as tf
 # import keras
 from TFDWT.DWT1DFB import DWT1D, IDWT1D
-from VolterraSys.LSIVolterraNDlayout import LSIVolterraNDlayout
+from .LSIVolterraNDlayout import LSIVolterraNDlayout
 
 @tf.keras.utils.register_keras_serializable()
 class LSIVolterra1D(LSIVolterraNDlayout):
