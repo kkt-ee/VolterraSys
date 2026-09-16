@@ -32,6 +32,22 @@ class QSIVolterra1D(tf.keras.layers.Layer):
             initializer='glorot_uniform',
             trainable=True,
             name='UIR_kernel')
+
+        if self.mra:
+            N = int(input_shape[1])
+
+            def initialize_synthesis(shape, dtype=None):
+                idwt_input = IDWT1D(self.wave, clean=False)
+                idwt_input.build((None, N, 1))
+                return tf.cast(idwt_input.S, dtype or tf.float32)
+
+            self.S_input = self.add_weight(
+                name='input_synthesis',
+                shape=(N, N),
+                initializer=initialize_synthesis,
+                trainable=False,
+            )
+
         super().build(input_shape)
     
     # def make_h2(self):
@@ -88,7 +104,8 @@ class QSIVolterra1D(tf.keras.layers.Layer):
         def make_mra_kernel(h_shifted):
             shape = tf.shape(h_shifted)
             _ = tf.reshape(h_shifted, [shape[0], shape[1], shape[2], shape[3] * shape[4]])
-            _ = DWT2D(self.wave, clean=False)(_)
+            _ = tf.einsum('nijc,il->nljc', _, self.S_input)
+            _ = tf.einsum('nljc,jm->nlmc', _, self.S_input)
             h_init = tf.reshape(_, [shape[0], shape[1], shape[2], shape[3], shape[4]])
             # print(h_init.shape, tf.squeeze(h_init))
 
@@ -126,6 +143,7 @@ class QSIVolterra1D(tf.keras.layers.Layer):
         
 
         if self.mra==False:
+            self.make_mra_h2()
             return self.__call_compute_in_natural_domain(self.x2)
         else:
             return self.__call_compute_with_mra_kernel(self.x2)
@@ -155,9 +173,8 @@ class QSIVolterra1D(tf.keras.layers.Layer):
         config = super().get_config()
         config.update({
             'kernel_size': self.L,
-            'wavelet': self.wave,
+            'wave': self.wave,
             'filters': self.filters,
-            'mra': self.mra
         })
         return config
 
