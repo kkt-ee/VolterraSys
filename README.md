@@ -7,8 +7,8 @@
 
 `VolterraSys` provides TensorFlow/Keras layers for trainable multidimensional linear and quadratic Volterra kernels in wavelet and natural bases.
 
-Copyright 2025 Kishore Kumar Tarafdar.
-Licensed under the Apache License, Version 2.0. See [`LICENSE`](LICENSE).
+<!-- Copyright 2025 Kishore Kumar Tarafdar.
+Licensed under the Apache License, Version 2.0. See [`LICENSE`](LICENSE). -->
 
 ## Capabilities
 
@@ -94,3 +94,7 @@ This software is released for broad research, educational, and engineering use. 
 ## License
 
 Apache License 2.0. See [`LICENSE`](LICENSE).
+
+* * *
+
+***VolterraSys (C) 2026 Kishore Kumar Tarafdar, भारत*** 🇮🇳
