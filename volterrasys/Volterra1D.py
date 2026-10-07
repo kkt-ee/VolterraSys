@@ -2,11 +2,13 @@ import string
 
 import tensorflow as tf
 from TFDWT.DWT1DFB import DWT1D, IDWT1D
+from TFDWT.multilevel.dwt import dwt_packed_axis, idwt_packed_axis
 from ._wavelet_ops import (
     analysis_axis,
     natural_to_wavelet_kernel,
     synthesis_axis,
     validate_backend,
+    validate_level,
     wavelet_to_natural_kernel,
 )
 
@@ -26,7 +28,16 @@ class Volterra1D(tf.keras.layers.Layer):
     --@KKT, 06Oct2026
     """
 
-    def __init__(self, m=1, filters=1, Ny=16, wave='haar', backend='matrix', **kwargs):
+    def __init__(
+        self,
+        m=1,
+        filters=1,
+        Ny=16,
+        wave='haar',
+        backend='matrix',
+        level=1,
+        **kwargs,
+    ):
         super().__init__(**kwargs)
         if isinstance(m, bool) or not isinstance(m, int) or m < 1:
             raise ValueError("m must be a positive integer.")
@@ -36,6 +47,7 @@ class Volterra1D(tf.keras.layers.Layer):
         self.mra = self.wave is not None
         self.filters = filters
         self.Ny = Ny
+        self.level = validate_level(level)
         self.backend = validate_backend(backend)
 
         self._make_einsum_equations()
@@ -109,6 +121,7 @@ class Volterra1D(tf.keras.layers.Layer):
                     natural_kernel,
                     self.wave,
                     order=self.m,
+                    level=self.level,
                 )
             initializer = initialize_wavelet_kernel
 
@@ -123,6 +136,14 @@ class Volterra1D(tf.keras.layers.Layer):
         if self.mra and self.backend == 'matrix':
             def initialize_analysis(length):
                 def initializer(shape, dtype=None):
+                    if self.level > 1:
+                        return dwt_packed_axis(
+                            tf.eye(length, dtype=dtype or tf.float32),
+                            level=self.level,
+                            wave=self.wave,
+                            axis=0,
+                            backend='matrix',
+                        )
                     dwt = DWT1D(self.wave, clean=False)
                     dwt.build((None, length, 1))
                     return tf.cast(dwt.A, dtype or tf.float32)
@@ -130,6 +151,14 @@ class Volterra1D(tf.keras.layers.Layer):
 
             def initialize_synthesis(length):
                 def initializer(shape, dtype=None):
+                    if self.level > 1:
+                        return idwt_packed_axis(
+                            tf.eye(length, dtype=dtype or tf.float32),
+                            level=self.level,
+                            wave=self.wave,
+                            axis=0,
+                            backend='matrix',
+                        )
                     idwt = IDWT1D(self.wave, clean=False)
                     idwt.build((None, length, 1))
                     return tf.cast(idwt.S, dtype or tf.float32)
@@ -161,7 +190,12 @@ class Volterra1D(tf.keras.layers.Layer):
         if self.backend == 'matrix':
             alpha = tf.einsum('li,bic->blc', self.A_input, x)
         else:
-            alpha = analysis_axis(x, self.wave, axis=1)
+            alpha = analysis_axis(
+                x,
+                self.wave,
+                axis=1,
+                level=self.level,
+            )
         beta = tf.einsum(
             self._contraction_equation,
             *([alpha] * self.m),
@@ -169,7 +203,12 @@ class Volterra1D(tf.keras.layers.Layer):
         )
         if self.backend == 'matrix':
             return tf.einsum('uv,bvo->buo', self.S_output, beta)
-        return synthesis_axis(beta, self.wave, axis=1)
+        return synthesis_axis(
+            beta,
+            self.wave,
+            axis=1,
+            level=self.level,
+        )
 
     def __compute_output_in_natural_domain(self, x):
         h = self.__make_h()
@@ -195,6 +234,7 @@ class Volterra1D(tf.keras.layers.Layer):
             self.hm,
             self.wave,
             order=self.m,
+            level=self.level,
         )
 
     def get_config(self):
@@ -203,6 +243,7 @@ class Volterra1D(tf.keras.layers.Layer):
             'm': self.m,
             'Ny': self.Ny,
             'wave': self.wave,
+            'level': self.level,
             'filters': self.filters,
             'backend': self.backend,
         })

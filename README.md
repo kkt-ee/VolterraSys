@@ -24,7 +24,7 @@ For general Volterra (1D I/O) kernels `LinearVolterra1D`, `QuadraticVolterra1D`,
 
 - TensorFlow (>=2.15)
 - Inputs are TensorFlow tensors with channel-last layout.
-- Wavelet domain requires the `TFDWT` package which can be installed via `pip install TFDWT`.
+- Wavelet domain requires `TFDWT>=0.1.2`, which can be installed via `pip install TFDWT`.
 <!-- - Natural-domain computation uses `wave=None`; wavelet-domain computation uses a supported wavelet name. -->
 
 ## Installation
@@ -95,8 +95,28 @@ layer = Volterra1D(
     Ny=32,
     wave="bior2.2",
     backend="filterbank",
+    level=3,
 )
 ```
+
+For the general shift-variant `LinearVolterra1D`, `QuadraticVolterra1D`,
+and `Volterra1D` layers, `level=1` is the backward-compatible default and
+`level>1` selects a multilevel transform. Coefficients are packed along the
+sequence axis as `[L_J, H_J, H_(J-1), ..., H_1]`, so the tensor length and
+kernel shape do not change. In wavelet mode the stored trainable kernel is
+the coefficient tensor $H$ and the computation is
+
+$$
+\alpha=A_Jx,\qquad
+\beta=H\alpha^m,\qquad
+y=S_J\beta.
+$$
+
+The equivalent natural-domain kernel obeys
+$H=A_{\mathrm{out},J}hS_{\mathrm{in},J}^{\otimes m}$, including for
+biorthogonal wavelets. Input and output lengths must be divisible by
+$2^J$, and the signal at every decomposition level must cover the selected
+wavelet-filter length. LSI and QSI layers currently remain single-level.
 
 ## Citation
 

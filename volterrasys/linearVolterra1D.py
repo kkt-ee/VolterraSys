@@ -1,8 +1,10 @@
 import tensorflow as tf
 from TFDWT.DWT1DFB import DWT1D, IDWT1D
+from TFDWT.multilevel.dwt import dwt_packed_axis, idwt_packed_axis
 from ._wavelet_ops import (
     natural_to_wavelet_kernel,
     validate_backend,
+    validate_level,
     wavelet_to_natural_kernel,
 )
 
@@ -20,7 +22,15 @@ class LinearVolterra1D(tf.keras.layers.Layer):
 
     --@KKT, 03Jul2025"""
     
-    def __init__(self, filters=1, Ny=16, wave='haar', backend='matrix', **kwargs):
+    def __init__(
+        self,
+        filters=1,
+        Ny=16,
+        wave='haar',
+        backend='matrix',
+        level=1,
+        **kwargs,
+    ):
         super().__init__(**kwargs)
         # self.L = kernel_size
         self.wave = wave
@@ -28,6 +38,7 @@ class LinearVolterra1D(tf.keras.layers.Layer):
         else: self.mra = True
         self.filters = filters
         self.Ny = Ny
+        self.level = validate_level(level)
         self.backend = validate_backend(backend)
         # self.mra = mra
     
@@ -49,6 +60,7 @@ class LinearVolterra1D(tf.keras.layers.Layer):
                     natural_kernel,
                     self.wave,
                     order=1,
+                    level=self.level,
                 )
             initializer = initialize_wavelet_kernel
 
@@ -78,7 +90,16 @@ class LinearVolterra1D(tf.keras.layers.Layer):
         ## l-axis below --->l and ^v
         
         ## H[v,l] 
-        α = DWT1D(self.wave, clean=False, backend=self.backend)(x)
+        if self.level == 1:
+            α = DWT1D(self.wave, clean=False, backend=self.backend)(x)
+        else:
+            α = dwt_packed_axis(
+                x,
+                level=self.level,
+                wave=self.wave,
+                axis=1,
+                backend=self.backend,
+            )
         # print('α = ', α.shape)
         # print('HT and α', HT.shape, α.shape)
         β = tf.einsum('bic,uico->buo',α, HT) #HT and α (16, 4, 1, 1) (None, 4, 1)
@@ -91,7 +112,16 @@ class LinearVolterra1D(tf.keras.layers.Layer):
         
         # βT = tf.transpose(beta, perm=[1,0,2])
         # print('βT',tf.squeeze(βT).numpy())
-        y = IDWT1D(self.wave, clean=False, backend=self.backend)(β)#
+        if self.level == 1:
+            y = IDWT1D(self.wave, clean=False, backend=self.backend)(β)#
+        else:
+            y = idwt_packed_axis(
+                β,
+                level=self.level,
+                wave=self.wave,
+                axis=1,
+                backend=self.backend,
+            )
         # print('y',tf.squeeze(y).numpy())
         return y
          
@@ -114,6 +144,7 @@ class LinearVolterra1D(tf.keras.layers.Layer):
             self.h1,
             self.wave,
             order=1,
+            level=self.level,
         )
     
     def get_config(self):
@@ -121,6 +152,7 @@ class LinearVolterra1D(tf.keras.layers.Layer):
         config.update({
             'Ny': self.Ny,
             'wave': self.wave,
+            'level': self.level,
             'filters': self.filters,
             'backend': self.backend,
         })

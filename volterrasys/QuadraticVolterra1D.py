@@ -1,8 +1,10 @@
 import tensorflow as tf
 from TFDWT.DWT1DFB import DWT1D, IDWT1D
+from TFDWT.multilevel.dwt import dwt_packed_axis, idwt_packed_axis
 from ._wavelet_ops import (
     natural_to_wavelet_kernel,
     validate_backend,
+    validate_level,
     wavelet_to_natural_kernel,
 )
 
@@ -22,7 +24,15 @@ class QuadraticVolterra1D(tf.keras.layers.Layer):
     --@KKT, 06Oct2026
     """
 
-    def __init__(self, filters=1, Ny=16, wave='haar', backend='matrix', **kwargs):
+    def __init__(
+        self,
+        filters=1,
+        Ny=16,
+        wave='haar',
+        backend='matrix',
+        level=1,
+        **kwargs,
+    ):
         super().__init__(**kwargs)
         self.wave = wave
         if self.wave is None:
@@ -31,6 +41,7 @@ class QuadraticVolterra1D(tf.keras.layers.Layer):
             self.mra = True
         self.filters = filters
         self.Ny = Ny
+        self.level = validate_level(level)
         self.backend = validate_backend(backend)
 
     def build(self, input_shape):
@@ -58,6 +69,7 @@ class QuadraticVolterra1D(tf.keras.layers.Layer):
                     natural_kernel,
                     self.wave,
                     order=2,
+                    level=self.level,
                 )
             initializer = initialize_wavelet_kernel
 
@@ -80,9 +92,35 @@ class QuadraticVolterra1D(tf.keras.layers.Layer):
 
     def __compute_output_with_mra_kernel(self, x):
         H = self.__make_H()
-        alpha = DWT1D(self.wave, clean=False, backend=self.backend)(x)
+        if self.level == 1:
+            alpha = DWT1D(
+                self.wave,
+                clean=False,
+                backend=self.backend,
+            )(x)
+        else:
+            alpha = dwt_packed_axis(
+                x,
+                level=self.level,
+                wave=self.wave,
+                axis=1,
+                backend=self.backend,
+            )
         beta = tf.einsum('bic,bjd,uijcdo->buo', alpha, alpha, H)
-        y = IDWT1D(self.wave, clean=False, backend=self.backend)(beta)
+        if self.level == 1:
+            y = IDWT1D(
+                self.wave,
+                clean=False,
+                backend=self.backend,
+            )(beta)
+        else:
+            y = idwt_packed_axis(
+                beta,
+                level=self.level,
+                wave=self.wave,
+                axis=1,
+                backend=self.backend,
+            )
         return y
 
     def __compute_output_in_natural_domain(self, x):
@@ -106,6 +144,7 @@ class QuadraticVolterra1D(tf.keras.layers.Layer):
             self.h2,
             self.wave,
             order=2,
+            level=self.level,
         )
 
     def get_config(self):
@@ -113,6 +152,7 @@ class QuadraticVolterra1D(tf.keras.layers.Layer):
         config.update({
             'Ny': self.Ny,
             'wave': self.wave,
+            'level': self.level,
             'filters': self.filters,
             'backend': self.backend,
         })
