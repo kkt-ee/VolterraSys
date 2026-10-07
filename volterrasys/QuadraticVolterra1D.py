@@ -1,5 +1,6 @@
 import tensorflow as tf
 from TFDWT.DWT1DFB import DWT1D, IDWT1D
+from ._wavelet_ops import synthesis_transpose_axis, validate_backend
 
 
 # %% Shift variant Quadratic (m=2) Multiresolution Volterra Kernel
@@ -17,7 +18,7 @@ class QuadraticVolterra1D(tf.keras.layers.Layer):
     --@KKT, 06Oct2026
     """
 
-    def __init__(self, filters=1, Ny=16, wave='haar', **kwargs):
+    def __init__(self, filters=1, Ny=16, wave='haar', backend='matrix', **kwargs):
         super().__init__(**kwargs)
         self.wave = wave
         if self.wave is None:
@@ -26,6 +27,7 @@ class QuadraticVolterra1D(tf.keras.layers.Layer):
             self.mra = True
         self.filters = filters
         self.Ny = Ny
+        self.backend = validate_backend(backend)
 
     def build(self, input_shape):
         # input_shape: (batch_size, N, channels)
@@ -48,7 +50,7 @@ class QuadraticVolterra1D(tf.keras.layers.Layer):
             name='kernel',
         )
 
-        if self.mra:
+        if self.mra and self.backend == 'matrix':
             N = int(input_shape[1])
 
             def initialize_synthesis(shape, dtype=None):
@@ -74,9 +76,9 @@ class QuadraticVolterra1D(tf.keras.layers.Layer):
 
     def __compute_output_with_mra_kernel(self, x):
         H = self.__make_H()
-        alpha = DWT1D(self.wave, clean=False)(x)
+        alpha = DWT1D(self.wave, clean=False, backend=self.backend)(x)
         beta = tf.einsum('bic,bjd,uijcdo->buo', alpha, alpha, H)
-        y = IDWT1D(self.wave, clean=False)(beta)
+        y = IDWT1D(self.wave, clean=False, backend=self.backend)(beta)
         return y
 
     def __compute_output_in_natural_domain(self, x):
@@ -91,14 +93,28 @@ class QuadraticVolterra1D(tf.keras.layers.Layer):
 
     def __make_H(self):
         def mra_kernel(h):
-            h_input = tf.einsum('uijcdo,il->uljcdo', h, self.S_input)
-            h_input = tf.einsum(
-                'uljcdo,jm->ulmcdo', h_input, self.S_input
-            )
+            if self.backend == 'matrix':
+                h_input = tf.einsum(
+                    'uijcdo,il->uljcdo', h, self.S_input
+                )
+                h_input = tf.einsum(
+                    'uljcdo,jm->ulmcdo', h_input, self.S_input
+                )
+            else:
+                h_input = synthesis_transpose_axis(h, self.wave, axis=1)
+                h_input = synthesis_transpose_axis(
+                    h_input,
+                    self.wave,
+                    axis=2,
+                )
 
             shape = tf.shape(h_input)
             h_for_dwt = tf.reshape(h_input, [1, shape[0], -1])
-            H = DWT1D(self.wave, clean=False)(h_for_dwt)
+            H = DWT1D(
+                self.wave,
+                clean=False,
+                backend=self.backend,
+            )(h_for_dwt)
             H = tf.reshape(H, shape)
             return H
 
@@ -113,6 +129,7 @@ class QuadraticVolterra1D(tf.keras.layers.Layer):
             'Ny': self.Ny,
             'wave': self.wave,
             'filters': self.filters,
+            'backend': self.backend,
         })
         return config
 

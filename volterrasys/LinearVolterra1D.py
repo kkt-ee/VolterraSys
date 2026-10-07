@@ -1,5 +1,6 @@
 import tensorflow as tf
 from TFDWT.DWT1DFB import DWT1D, IDWT1D
+from ._wavelet_ops import synthesis_transpose_axis, validate_backend
 
 #%% Shift variant Linear (m=1) Multiresolution Volterra Kernel
 @tf.keras.utils.register_keras_serializable()
@@ -15,7 +16,7 @@ class LinearVolterra1D(tf.keras.layers.Layer):
 
     --@KKT, 03Jul2025"""
     
-    def __init__(self, filters=1, Ny=16, wave='haar', **kwargs):
+    def __init__(self, filters=1, Ny=16, wave='haar', backend='matrix', **kwargs):
         super().__init__(**kwargs)
         # self.L = kernel_size
         self.wave = wave
@@ -23,6 +24,7 @@ class LinearVolterra1D(tf.keras.layers.Layer):
         else: self.mra = True
         self.filters = filters
         self.Ny = Ny
+        self.backend = validate_backend(backend)
         # self.mra = mra
     
     def build(self, input_shape):
@@ -42,7 +44,7 @@ class LinearVolterra1D(tf.keras.layers.Layer):
         # n = tf.range(self.N)
         # self.row_indices = tf.math.mod(n[:, tf.newaxis] - n, self.N)
 
-        if self.mra:
+        if self.mra and self.backend == 'matrix':
             N = int(input_shape[1])
 
             def initialize_synthesis(shape, dtype=None):
@@ -72,7 +74,7 @@ class LinearVolterra1D(tf.keras.layers.Layer):
         ## l-axis below --->l and ^v
         
         ## H[v,l] 
-        α = DWT1D(self.wave, clean=False)(x)
+        α = DWT1D(self.wave, clean=False, backend=self.backend)(x)
         # print('α = ', α.shape)
         # print('HT and α', HT.shape, α.shape)
         β = tf.einsum('bic,uico->buo',α, HT) #HT and α (16, 4, 1, 1) (None, 4, 1)
@@ -85,7 +87,7 @@ class LinearVolterra1D(tf.keras.layers.Layer):
         
         # βT = tf.transpose(beta, perm=[1,0,2])
         # print('βT',tf.squeeze(βT).numpy())
-        y = IDWT1D(self.wave, clean=False)(β)#
+        y = IDWT1D(self.wave, clean=False, backend=self.backend)(β)#
         # print('y',tf.squeeze(y).numpy())
         return y
          
@@ -107,9 +109,22 @@ class LinearVolterra1D(tf.keras.layers.Layer):
             # print(h1_reshaped.shape, 'h1_reshaped')
 
             # Apply synthesis on the input axis and DWT on the output axis
-            dwt_layer2 = DWT1D(self.wave, clean=False)
+            dwt_layer2 = DWT1D(
+                self.wave,
+                clean=False,
+                backend=self.backend,
+            )
             
-            dwt_once = tf.einsum('uic,il->ulc', h1_reshaped, self.S_input)
+            if self.backend == 'matrix':
+                dwt_once = tf.einsum(
+                    'uic,il->ulc', h1_reshaped, self.S_input
+                )
+            else:
+                dwt_once = synthesis_transpose_axis(
+                    h1_reshaped,
+                    self.wave,
+                    axis=1,
+                )
             # print(dwt_once.shape, 'dwt once')
             dwt_once_T = tf.transpose(dwt_once, perm=[1, 0, 2])
             # print(dwt_once_T.shape, 'dwt once T')  
@@ -135,6 +150,7 @@ class LinearVolterra1D(tf.keras.layers.Layer):
             'Ny': self.Ny,
             'wave': self.wave,
             'filters': self.filters,
+            'backend': self.backend,
         })
         return config
 

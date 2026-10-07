@@ -1,6 +1,7 @@
 import tensorflow as tf
 from TFDWT.DWT1DFB import DWT1D, IDWT1D
 from TFDWT.DWT2DFB import DWT2D, IDWT2D
+from ._wavelet_ops import synthesis_transpose_axis, validate_backend
 
 @tf.keras.utils.register_keras_serializable()
 class QSIVolterra1D(tf.keras.layers.Layer): 
@@ -11,13 +12,14 @@ class QSIVolterra1D(tf.keras.layers.Layer):
     Licensed under the Apache License, Version 2.0. See LICENSE for details.
     
     --@KKT@03Jul2025"""
-    def __init__(self, filters=1, kernel_size=4, wave='haar', **kwargs):
+    def __init__(self, filters=1, kernel_size=4, wave='haar', backend='matrix', **kwargs):
         super().__init__(**kwargs)
         self.L = kernel_size
         self.filters = filters
         self.wave = wave
         if self.wave is not None: self.mra = True
         else: self.mra = False
+        self.backend = validate_backend(backend)
         # self.dwt2 = DWT2D(self.wave, clean=False)
         # self.idwt1 = IDWT1D(self.wave, clean=False)
 
@@ -33,7 +35,7 @@ class QSIVolterra1D(tf.keras.layers.Layer):
             trainable=True,
             name='UIR_kernel')
 
-        if self.mra:
+        if self.mra and self.backend == 'matrix':
             N = int(input_shape[1])
 
             def initialize_synthesis(shape, dtype=None):
@@ -104,8 +106,12 @@ class QSIVolterra1D(tf.keras.layers.Layer):
         def make_mra_kernel(h_shifted):
             shape = tf.shape(h_shifted)
             _ = tf.reshape(h_shifted, [shape[0], shape[1], shape[2], shape[3] * shape[4]])
-            _ = tf.einsum('nijc,il->nljc', _, self.S_input)
-            _ = tf.einsum('nljc,jm->nlmc', _, self.S_input)
+            if self.backend == 'matrix':
+                _ = tf.einsum('nijc,il->nljc', _, self.S_input)
+                _ = tf.einsum('nljc,jm->nlmc', _, self.S_input)
+            else:
+                _ = synthesis_transpose_axis(_, self.wave, axis=1)
+                _ = synthesis_transpose_axis(_, self.wave, axis=2)
             h_init = tf.reshape(_, [shape[0], shape[1], shape[2], shape[3], shape[4]])
             # print(h_init.shape, tf.squeeze(h_init))
 
@@ -114,7 +120,11 @@ class QSIVolterra1D(tf.keras.layers.Layer):
             shape
             _ = tf.reshape(h_init, [shape[0], shape[1], shape[2]*shape[3]*shape[4]])
             _ = tf.transpose(_, perm=[1,0,2])
-            _ = DWT1D(self.wave, clean=False)(_)
+            _ = DWT1D(
+                self.wave,
+                clean=False,
+                backend=self.backend,
+            )(_)
             _ = tf.transpose(_, perm=[1,0,2])
             H = tf.reshape(_, [shape[0], shape[1], shape[2], shape[3], shape[4]])
             return H
@@ -149,13 +159,13 @@ class QSIVolterra1D(tf.keras.layers.Layer):
             return self.__call_compute_with_mra_kernel(self.x2)
     
     def __call_compute_with_mra_kernel(self, x2):
-        α2 = DWT2D(self.wave, clean=False)(x2)
+        α2 = DWT2D(self.wave, clean=False, backend=self.backend)(x2)
         # print('α2', α2.shape)
         H = self.make_mra_h2()
         ## Fitlering
         β = tf.einsum('ijkco,bjkc->bio', H, α2)
         # print('β', β.shape)
-        y2 = IDWT1D(self.wave, clean=False)(β)
+        y2 = IDWT1D(self.wave, clean=False, backend=self.backend)(β)
         # print('y2', y2.shape)
         return y2
     
@@ -175,6 +185,7 @@ class QSIVolterra1D(tf.keras.layers.Layer):
             'kernel_size': self.L,
             'wave': self.wave,
             'filters': self.filters,
+            'backend': self.backend,
         })
         return config
 

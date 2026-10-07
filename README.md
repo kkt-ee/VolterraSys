@@ -80,6 +80,21 @@ qlayer2d = QSIVolterra2D(filters=1, kernel_size=4, wave='haar')
 qlayer3d = QSIVolterra3D(filters=1, kernel_size=4, wave='haar')
 ```
 
+The 1D layers `LSIVolterra1D`, `QSIVolterra1D`, `LinearVolterra1D`,
+`QuadraticVolterra1D`, and `Volterra1D` use `backend="matrix"` by default.
+Set `backend="filterbank"` to compute the same periodic wavelet-domain
+operation without storing dense wavelet operator matrices:
+
+```python
+layer = Volterra1D(
+    m=3,
+    filters=2,
+    Ny=32,
+    wave="bior2.2",
+    backend="filterbank",
+)
+```
+
 ## Citation
 
 This software is released for broad research, educational, and engineering use. If this package proves useful in related work, please cite the following thesis, whose Chapter 2 presents the underlying theory and computational details:

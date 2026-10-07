@@ -2,6 +2,7 @@ import tensorflow as tf
 # import keras
 from TFDWT.DWT1DFB import DWT1D, IDWT1D
 from .LSIVolterraNDlayout import LSIVolterraNDlayout
+from ._wavelet_ops import synthesis_transpose_axis, validate_backend
 
 @tf.keras.utils.register_keras_serializable()
 class LSIVolterra1D(LSIVolterraNDlayout):
@@ -16,11 +17,17 @@ class LSIVolterra1D(LSIVolterraNDlayout):
     Output: Linear shift invariant sequence monomial y1[n]
 
     --@KKT@04Jul2025 """
-    def __init__(self, filters=1, kernel_size=4, wave='haar', **kwargs):
-        super().__init__(filters=filters, kernel_size=kernel_size, wave=wave, **kwargs)
+    def __init__(self, filters=1, kernel_size=4, wave='haar', backend='matrix', **kwargs):
+        super().__init__(
+            filters=filters,
+            kernel_size=kernel_size,
+            wave=wave,
+            **kwargs,
+        )
+        self.backend = validate_backend(backend)
 
     def build(self, input_shape):
-        if self.mra:
+        if self.mra and self.backend == 'matrix':
             N = int(input_shape[1])
 
             def initialize_synthesis(shape, dtype=None):
@@ -68,14 +75,21 @@ class LSIVolterra1D(LSIVolterraNDlayout):
         
             ## UPDATED
             # Vectorized: flatten last two axes for DWT
-            dwt1 = DWT1D(self.wave, clean=False)
+            dwt1 = DWT1D(self.wave, clean=False, backend=self.backend)
             tmp_h_for_dwt = tf.reshape(h1_shifted, (self.N, self.N, self.channels * self.filters))
             ## x is dummy here
             # the following line is a bug for bior wavelets
             # x = dwt1(tmp_h_for_dwt)           # (N, dwt_len, in_channels*out_channels)
 
             ##bug fix----15 sep 2026
-            x = tf.einsum('ric,il->rlc', tmp_h_for_dwt, self.S_input)
+            if self.backend == 'matrix':
+                x = tf.einsum('ric,il->rlc', tmp_h_for_dwt, self.S_input)
+            else:
+                x = synthesis_transpose_axis(
+                    tmp_h_for_dwt,
+                    self.wave,
+                    axis=1,
+                )
             #---------------------
 
 
@@ -102,14 +116,14 @@ class LSIVolterra1D(LSIVolterraNDlayout):
     
     def _call_with_mra_kernel(self, x):  
         ## H[v,l] 
-        α = DWT1D(self.wave, clean=False)(x) 
+        α = DWT1D(self.wave, clean=False, backend=self.backend)(x) 
         # print('α = ', α.shape)
         HT = self.__makeH()
         print('HT and α', HT.shape, α.shape)
         β = tf.einsum('bic,uico->buo', α, HT)
         # β = tf.einsum('buco->buo',β)
         print('β', β.shape)
-        y = IDWT1D(self.wave, clean=False)(β)#
+        y = IDWT1D(self.wave, clean=False, backend=self.backend)(β)#
         # print('y',tf.squeeze(y).numpy())
         return y#, ynatural
 
@@ -119,6 +133,11 @@ class LSIVolterra1D(LSIVolterraNDlayout):
 
     def sanity_check(self):
         return self._call_with_mra_kernel(self.x), self._call_in_natural_domain(self.x)  
+
+    def get_config(self):
+        config = super().get_config()
+        config.update({'backend': self.backend})
+        return config
 
 
 
