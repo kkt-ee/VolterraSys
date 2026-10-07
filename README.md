@@ -12,17 +12,13 @@ Licensed under the Apache License, Version 2.0. See [`LICENSE`](LICENSE). -->
 
 ## Capabilities
 
-- Shift-variant 1D kernels: `LinearVolterra1D` (m=1), `QuadraticVolterra1D` (m=2), and `Volterra1D(m=...)` for general order.
-- Linear shift invariant wavelet and natural basis Volterra kernel layers for 1D, 2D, 3D data: `LSIVolterra1D`, `LSIVolterra2D`, `LSIVolterra3D`.
-- Quadratic shift invariant wavelet and natural basis Volterra kernel layers for 1D, 2D, 3D data: `QSIVolterra1D`, `QSIVolterra2D`, `QSIVolterra3D`.
+- Volterra 1D kernels: `LinearVolterra1D` (m=1), `QuadraticVolterra1D` (m=2), and `Volterra1D(m=...)` for general order. These are general shift-variant Volterra kernels.
+- Linear shift invariant (LSI) wavelet and natural basis Volterra kernel layers for 1D, 2D, 3D data: `LSIVolterra1D`, `LSIVolterra2D`, `LSIVolterra3D`.
+- Quadratic shift invariant (QSI) wavelet and natural basis Volterra kernel layers for 1D, 2D, 3D data: `QSIVolterra1D`, `QSIVolterra2D`, `QSIVolterra3D`.
 - Multiresolution Volterra kernels with orthogonal wavelets such as `wave="haar"` (default) and biorthogonal wavelets `wave="bior1.3"`. Supports wavelet families: "db", "sym", "coif", "bior", "rbio"  
 - Natural-domain kernels have `wave=None`.
 
-For the shift-variant `LinearVolterra1D`, `QuadraticVolterra1D`, and
-`Volterra1D` layers, `wave=None` makes the trainable kernel the natural-domain
-kernel $h$. With a wavelet selected, the trainable kernel is the
-transform-domain coefficient tensor $H$ itself. The LSI and QSI layers retain
-their structured kernel parameterizations.
+For general Volterra (1D I/O) kernels `LinearVolterra1D`, `QuadraticVolterra1D`, and `Volterra1D` layers, `wave=None` makes the trainable kernel the natural-domain kernel $h$. With a wavelet selected, the trainable kernel is the transform-domain coefficient tensor $H$ itself. The LSI and QSI layers retain their structured kernel parameterizations.
 
 ## Dependencies
 
@@ -42,6 +38,7 @@ pip install VolterraSys
 ```python
 import tensorflow as tf
 
+# General Volterra kernels for 1D I/O
 from volterrasys.Volterra1D import Volterra1D
 
 # Linear shift invariant wavelet bases Volterra kernels
