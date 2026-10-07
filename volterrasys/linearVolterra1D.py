@@ -1,6 +1,10 @@
 import tensorflow as tf
 from TFDWT.DWT1DFB import DWT1D, IDWT1D
-from ._wavelet_ops import synthesis_transpose_axis, validate_backend
+from ._wavelet_ops import (
+    natural_to_wavelet_kernel,
+    validate_backend,
+    wavelet_to_natural_kernel,
+)
 
 #%% Shift variant Linear (m=1) Multiresolution Volterra Kernel
 @tf.keras.utils.register_keras_serializable()
@@ -34,30 +38,30 @@ class LinearVolterra1D(tf.keras.layers.Layer):
         self.channels = input_shape[-1]
         kernel_shape = (self.Ny, self.N, input_shape[-1], self.filters)
         # kernel_shape = (self.L, input_shape[-1])
+        initializer = 'glorot_uniform'
+        if self.mra:
+            def initialize_wavelet_kernel(shape, dtype=None):
+                natural_kernel = tf.keras.initializers.GlorotUniform()(
+                    shape,
+                    dtype=dtype,
+                )
+                return natural_to_wavelet_kernel(
+                    natural_kernel,
+                    self.wave,
+                    order=1,
+                )
+            initializer = initialize_wavelet_kernel
+
+        # The stored kernel is h in natural mode and H in wavelet mode.
         self.h1 = self.add_weight(
             shape=kernel_shape,
-            initializer='glorot_uniform',
+            initializer=initializer,
             trainable=True,
             # regularizer=self.kernel_regularizer,
             name='kernel'
         )
         # n = tf.range(self.N)
         # self.row_indices = tf.math.mod(n[:, tf.newaxis] - n, self.N)
-
-        if self.mra and self.backend == 'matrix':
-            N = int(input_shape[1])
-
-            def initialize_synthesis(shape, dtype=None):
-                idwt_input = IDWT1D(self.wave, clean=False)
-                idwt_input.build((None, N, 1))
-                return tf.cast(idwt_input.S, dtype or tf.float32)
-
-            self.S_input = self.add_weight(
-                name='input_synthesis',
-                shape=(N, N),
-                initializer=initialize_synthesis,
-                trainable=False,
-            )
 
         super().build(input_shape)
 
@@ -92,7 +96,8 @@ class LinearVolterra1D(tf.keras.layers.Layer):
         return y
          
     def __compute_output_in_natural_domain(self, x):
-        ynatural = tf.einsum('bic,uico->buo',x, self.h1)
+        h = self.__make_h()
+        ynatural = tf.einsum('bic,uico->buo', x, h)
         # print(ynatural.shape, 'natural y') 
         return ynatural
 
@@ -100,49 +105,16 @@ class LinearVolterra1D(tf.keras.layers.Layer):
         return self.__compute_output_with_mra_kernel(self.x),  self.__compute_output_in_natural_domain(self.x)  
     
     def __make_H(self):
-        def mra_kernel(h):
-            shape = tf.shape(h)
-            Ny, N, channels, filters = shape[0], shape[1], shape[2], shape[3]
-            
-            # Combine channels and filters: shape becomes (Ny, N, in_channels * filters)
-            h1_reshaped = tf.reshape(self.h1, [Ny, N, -1])
-            # print(h1_reshaped.shape, 'h1_reshaped')
+        return self.h1
 
-            # Apply synthesis on the input axis and DWT on the output axis
-            dwt_layer2 = DWT1D(
-                self.wave,
-                clean=False,
-                backend=self.backend,
-            )
-            
-            if self.backend == 'matrix':
-                dwt_once = tf.einsum(
-                    'uic,il->ulc', h1_reshaped, self.S_input
-                )
-            else:
-                dwt_once = synthesis_transpose_axis(
-                    h1_reshaped,
-                    self.wave,
-                    axis=1,
-                )
-            # print(dwt_once.shape, 'dwt once')
-            dwt_once_T = tf.transpose(dwt_once, perm=[1, 0, 2])
-            # print(dwt_once_T.shape, 'dwt once T')  
-            dwt_twice = dwt_layer2(dwt_once_T)
-            # print(dwt_twice.shape, 'dwt twice')
-
-            # Final transpose to (Ny, N, in_channels * filters)
-            tmp_H = tf.transpose(dwt_twice, perm=[1, 0, 2])
-
-            # Reshape back to (Ny, N, in_channels, filters)
-            H = tf.reshape(tmp_H, [self.h1.shape[0], self.h1.shape[1], self.h1.shape[2], self.h1.shape[3]])
-            # print(H.shape,'in mra kernel HT')
-            return H
-        
-        if self.mra == True:
-            return mra_kernel(self.h1)
-        else:
+    def __make_h(self):
+        if not self.mra:
             return self.h1
+        return wavelet_to_natural_kernel(
+            self.h1,
+            self.wave,
+            order=1,
+        )
     
     def get_config(self):
         config = super().get_config()

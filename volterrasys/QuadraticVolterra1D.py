@@ -1,6 +1,10 @@
 import tensorflow as tf
 from TFDWT.DWT1DFB import DWT1D, IDWT1D
-from ._wavelet_ops import synthesis_transpose_axis, validate_backend
+from ._wavelet_ops import (
+    natural_to_wavelet_kernel,
+    validate_backend,
+    wavelet_to_natural_kernel,
+)
 
 
 # %% Shift variant Quadratic (m=2) Multiresolution Volterra Kernel
@@ -43,27 +47,27 @@ class QuadraticVolterra1D(tf.keras.layers.Layer):
             self.channels,
             self.filters,
         )
+        initializer = 'glorot_uniform'
+        if self.mra:
+            def initialize_wavelet_kernel(shape, dtype=None):
+                natural_kernel = tf.keras.initializers.GlorotUniform()(
+                    shape,
+                    dtype=dtype,
+                )
+                return natural_to_wavelet_kernel(
+                    natural_kernel,
+                    self.wave,
+                    order=2,
+                )
+            initializer = initialize_wavelet_kernel
+
+        # The stored kernel is h in natural mode and H in wavelet mode.
         self.h2 = self.add_weight(
             shape=kernel_shape,
-            initializer='glorot_uniform',
+            initializer=initializer,
             trainable=True,
             name='kernel',
         )
-
-        if self.mra and self.backend == 'matrix':
-            N = int(input_shape[1])
-
-            def initialize_synthesis(shape, dtype=None):
-                idwt_input = IDWT1D(self.wave, clean=False)
-                idwt_input.build((None, N, 1))
-                return tf.cast(idwt_input.S, dtype or tf.float32)
-
-            self.S_input = self.add_weight(
-                name='input_synthesis',
-                shape=(N, N),
-                initializer=initialize_synthesis,
-                trainable=False,
-            )
 
         super().build(input_shape)
 
@@ -82,7 +86,8 @@ class QuadraticVolterra1D(tf.keras.layers.Layer):
         return y
 
     def __compute_output_in_natural_domain(self, x):
-        ynatural = tf.einsum('bic,bjd,uijcdo->buo', x, x, self.h2)
+        h = self.__make_h()
+        ynatural = tf.einsum('bic,bjd,uijcdo->buo', x, x, h)
         return ynatural
 
     def sanity_check(self):
@@ -92,36 +97,16 @@ class QuadraticVolterra1D(tf.keras.layers.Layer):
         )
 
     def __make_H(self):
-        def mra_kernel(h):
-            if self.backend == 'matrix':
-                h_input = tf.einsum(
-                    'uijcdo,il->uljcdo', h, self.S_input
-                )
-                h_input = tf.einsum(
-                    'uljcdo,jm->ulmcdo', h_input, self.S_input
-                )
-            else:
-                h_input = synthesis_transpose_axis(h, self.wave, axis=1)
-                h_input = synthesis_transpose_axis(
-                    h_input,
-                    self.wave,
-                    axis=2,
-                )
+        return self.h2
 
-            shape = tf.shape(h_input)
-            h_for_dwt = tf.reshape(h_input, [1, shape[0], -1])
-            H = DWT1D(
-                self.wave,
-                clean=False,
-                backend=self.backend,
-            )(h_for_dwt)
-            H = tf.reshape(H, shape)
-            return H
-
-        if self.mra is True:
-            return mra_kernel(self.h2)
-        else:
+    def __make_h(self):
+        if not self.mra:
             return self.h2
+        return wavelet_to_natural_kernel(
+            self.h2,
+            self.wave,
+            order=2,
+        )
 
     def get_config(self):
         config = super().get_config()

@@ -18,11 +18,23 @@ from volterrasys.LinearVolterra1D import LinearVolterra1D
 from volterrasys.QSIVolterra1D import QSIVolterra1D
 from volterrasys.QuadraticVolterra1D import QuadraticVolterra1D
 from volterrasys.Volterra1D import Volterra1D
+from volterrasys._wavelet_ops import (
+    natural_to_wavelet_kernel,
+    wavelet_to_natural_kernel,
+)
 
 
 CASES = (
     "lsi",
     "qsi",
+    "linear",
+    "quadratic",
+    "volterra_m1",
+    "volterra_m2",
+    "volterra_m3",
+)
+
+DIRECT_H_CASES = (
     "linear",
     "quadratic",
     "volterra_m1",
@@ -68,6 +80,26 @@ def _transformed_kernel(layer):
     return layer._Volterra1D__make_H()
 
 
+def _natural_kernel(layer):
+    if isinstance(layer, LinearVolterra1D):
+        return layer._LinearVolterra1D__make_h()
+    if isinstance(layer, QuadraticVolterra1D):
+        return layer._QuadraticVolterra1D__make_h()
+    if isinstance(layer, Volterra1D):
+        return layer._Volterra1D__make_h()
+    return _kernel(layer)
+
+
+def _order(case):
+    if case == "linear":
+        return 1
+    if case == "quadratic":
+        return 2
+    if case.startswith("volterra_m"):
+        return int(case[-1])
+    raise AssertionError(f"{case} does not use a direct H parameter.")
+
+
 def _assert_close(actual, expected, tolerance=2e-5):
     np.testing.assert_allclose(
         actual.numpy(),
@@ -88,8 +120,17 @@ def _build_with_shared_kernel(case, wave):
     filterbank(x)
     natural(x)
     values = tf.random.normal(_kernel(matrix).shape) * 0.1
-    _kernel(matrix).assign(values)
-    _kernel(filterbank).assign(values)
+    if case in DIRECT_H_CASES:
+        wavelet_values = natural_to_wavelet_kernel(
+            values,
+            wave,
+            order=_order(case),
+        )
+        _kernel(matrix).assign(wavelet_values)
+        _kernel(filterbank).assign(wavelet_values)
+    else:
+        _kernel(matrix).assign(values)
+        _kernel(filterbank).assign(values)
     _kernel(natural).assign(values)
     return x, matrix, filterbank, natural
 
@@ -106,8 +147,21 @@ def test_filterbank_matches_matrix_and_natural_domain(case, wave):
     _assert_close(filterbank_output, matrix_output)
     _assert_close(filterbank_output, natural_output)
 
+    if case in DIRECT_H_CASES:
+        matrix_wavelet, matrix_natural = matrix.sanity_check()
+        filterbank_wavelet, filterbank_natural = filterbank.sanity_check()
+        _assert_close(matrix_wavelet, matrix_natural, tolerance=3e-5)
+        _assert_close(
+            filterbank_wavelet,
+            filterbank_natural,
+            tolerance=3e-5,
+        )
+
     assert filterbank.non_trainable_variables == []
-    assert matrix.non_trainable_variables
+    if case in ("linear", "quadratic"):
+        assert matrix.non_trainable_variables == []
+    else:
+        assert matrix.non_trainable_variables
 
 
 @pytest.mark.parametrize("case", CASES)
@@ -193,14 +247,111 @@ def test_filterbank_supports_a_different_output_length():
     filterbank(x)
     natural(x)
     values = tf.random.normal(matrix.hm.shape) * 0.1
-    matrix.hm.assign(values)
-    filterbank.hm.assign(values)
+    wavelet_values = natural_to_wavelet_kernel(
+        values,
+        "bior2.2",
+        order=3,
+    )
+    matrix.hm.assign(wavelet_values)
+    filterbank.hm.assign(wavelet_values)
     natural.hm.assign(values)
 
     _assert_close(_transformed_kernel(filterbank), _transformed_kernel(matrix))
     _assert_close(filterbank(x), matrix(x))
     _assert_close(filterbank(x), natural(x))
     assert filterbank(x).shape == (1, 16, 1)
+
+
+@pytest.mark.parametrize("wave", ["haar", "db2", "bior2.2", "rbio2.2"])
+@pytest.mark.parametrize("case", DIRECT_H_CASES)
+def test_wavelet_parameter_is_H_and_inverse_recovers_h(case, wave):
+    x, matrix, filterbank, natural = _build_with_shared_kernel(case, wave)
+
+    _assert_close(_kernel(matrix), _transformed_kernel(matrix), tolerance=0.0)
+    _assert_close(
+        _kernel(filterbank),
+        _transformed_kernel(filterbank),
+        tolerance=0.0,
+    )
+    _assert_close(_natural_kernel(matrix), _kernel(natural), tolerance=3e-5)
+    _assert_close(
+        _natural_kernel(filterbank),
+        _kernel(natural),
+        tolerance=3e-5,
+    )
+    _assert_close(matrix(x), natural(x), tolerance=3e-5)
+    _assert_close(filterbank(x), natural(x), tolerance=3e-5)
+
+
+@pytest.mark.parametrize("wave", ["haar", "db2", "bior2.2", "rbio2.2"])
+@pytest.mark.parametrize("order", [1, 2, 3])
+def test_kernel_basis_conversion_round_trip(wave, order):
+    tf.random.set_seed(304 + order)
+    shape = (8,) + (8,) * order + (1,) * order + (2,)
+    h = tf.random.normal(shape)
+    H = natural_to_wavelet_kernel(h, wave, order)
+    reconstructed = wavelet_to_natural_kernel(H, wave, order)
+    _assert_close(reconstructed, h, tolerance=3e-5)
+
+
+@pytest.mark.parametrize(
+    "layer_class, extra",
+    [
+        (LinearVolterra1D, {"Ny": 8}),
+        (QuadraticVolterra1D, {"Ny": 8}),
+        (Volterra1D, {"m": 3, "Ny": 8}),
+    ],
+)
+def test_direct_H_initialization_is_backend_independent(layer_class, extra):
+    x = tf.ones((1, 8, 1))
+    tf.keras.utils.set_random_seed(307)
+    matrix = layer_class(
+        filters=1,
+        wave="bior2.2",
+        backend="matrix",
+        **extra,
+    )
+    matrix(x)
+    tf.keras.utils.set_random_seed(307)
+    filterbank = layer_class(
+        filters=1,
+        wave="bior2.2",
+        backend="filterbank",
+        **extra,
+    )
+    filterbank(x)
+
+    _assert_close(_kernel(matrix), _kernel(filterbank), tolerance=0.0)
+    _assert_close(matrix(x), filterbank(x), tolerance=3e-5)
+
+
+def test_direct_H_model_round_trips_through_keras_save(tmp_path):
+    inputs = tf.keras.Input(shape=(8, 2))
+    outputs = Volterra1D(
+        m=3,
+        filters=2,
+        Ny=8,
+        wave="bior2.2",
+        backend="filterbank",
+    )(inputs)
+    model = tf.keras.Model(inputs, outputs)
+    tf.random.set_seed(308)
+    x = tf.random.normal((2, 8, 2))
+    expected = model(x)
+
+    path = tmp_path / "direct_H.keras"
+    model.save(path)
+    restored = tf.keras.models.load_model(path)
+
+    _assert_close(restored(x), expected, tolerance=0.0)
+    restored_layer = next(
+        layer for layer in restored.layers if isinstance(layer, Volterra1D)
+    )
+    _assert_close(
+        restored_layer.hm,
+        next(layer for layer in model.layers if isinstance(layer, Volterra1D)).hm,
+        tolerance=0.0,
+    )
 
 
 def test_backend_is_validated():

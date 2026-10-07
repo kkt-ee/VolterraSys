@@ -4,9 +4,10 @@ import tensorflow as tf
 from TFDWT.DWT1DFB import DWT1D, IDWT1D
 from ._wavelet_ops import (
     analysis_axis,
+    natural_to_wavelet_kernel,
     synthesis_axis,
-    synthesis_transpose_axis,
     validate_backend,
+    wavelet_to_natural_kernel,
 )
 
 
@@ -97,9 +98,24 @@ class Volterra1D(tf.keras.layers.Layer):
             + (self.channels,) * self.m
             + (self.filters,)
         )
+        initializer = 'glorot_uniform'
+        if self.mra:
+            def initialize_wavelet_kernel(shape, dtype=None):
+                natural_kernel = tf.keras.initializers.GlorotUniform()(
+                    shape,
+                    dtype=dtype,
+                )
+                return natural_to_wavelet_kernel(
+                    natural_kernel,
+                    self.wave,
+                    order=self.m,
+                )
+            initializer = initialize_wavelet_kernel
+
+        # The stored kernel is h in natural mode and H in wavelet mode.
         self.hm = self.add_weight(
             shape=kernel_shape,
-            initializer='glorot_uniform',
+            initializer=initializer,
             trainable=True,
             name='kernel',
         )
@@ -123,18 +139,6 @@ class Volterra1D(tf.keras.layers.Layer):
                 name='input_analysis',
                 shape=(self.N, self.N),
                 initializer=initialize_analysis(self.N),
-                trainable=False,
-            )
-            self.S_input = self.add_weight(
-                name='input_synthesis',
-                shape=(self.N, self.N),
-                initializer=initialize_synthesis(self.N),
-                trainable=False,
-            )
-            self.A_output = self.add_weight(
-                name='output_analysis',
-                shape=(self.Ny, self.Ny),
-                initializer=initialize_analysis(self.Ny),
                 trainable=False,
             )
             self.S_output = self.add_weight(
@@ -168,10 +172,11 @@ class Volterra1D(tf.keras.layers.Layer):
         return synthesis_axis(beta, self.wave, axis=1)
 
     def __compute_output_in_natural_domain(self, x):
+        h = self.__make_h()
         return tf.einsum(
             self._contraction_equation,
             *([x] * self.m),
-            self.hm,
+            h,
         )
 
     def sanity_check(self):
@@ -181,24 +186,16 @@ class Volterra1D(tf.keras.layers.Layer):
         )
 
     def __make_H(self):
+        return self.hm
+
+    def __make_h(self):
         if not self.mra:
             return self.hm
-
-        if self.backend == 'matrix':
-            h_input = tf.einsum(
-                self._kernel_transform_equation,
-                self.hm,
-                *([self.S_input] * self.m),
-            )
-            shape = tf.shape(h_input)
-            h_for_dwt = tf.reshape(h_input, [shape[0], -1])
-            H = tf.einsum('vu,up->vp', self.A_output, h_for_dwt)
-            return tf.reshape(H, shape)
-
-        H = self.hm
-        for axis in range(1, self.m + 1):
-            H = synthesis_transpose_axis(H, self.wave, axis=axis)
-        return analysis_axis(H, self.wave, axis=0)
+        return wavelet_to_natural_kernel(
+            self.hm,
+            self.wave,
+            order=self.m,
+        )
 
     def get_config(self):
         config = super().get_config()

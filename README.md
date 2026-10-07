@@ -18,6 +18,12 @@ Licensed under the Apache License, Version 2.0. See [`LICENSE`](LICENSE). -->
 - Multiresolution Volterra kernels with orthogonal wavelets such as `wave="haar"` (default) and biorthogonal wavelets `wave="bior1.3"`. Supports wavelet families: "db", "sym", "coif", "bior", "rbio"  
 - Natural-domain kernels have `wave=None`.
 
+For the shift-variant `LinearVolterra1D`, `QuadraticVolterra1D`, and
+`Volterra1D` layers, `wave=None` makes the trainable kernel the natural-domain
+kernel $h$. With a wavelet selected, the trainable kernel is the
+transform-domain coefficient tensor $H$ itself. The LSI and QSI layers retain
+their structured kernel parameterizations.
+
 ## Dependencies
 
 - TensorFlow (>=2.15)
