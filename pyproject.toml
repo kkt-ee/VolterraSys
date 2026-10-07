@@ -1,0 +1,33 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "VolterraSys"
+version = "0.0.2"
+authors = [
+  { name="Kishore Kumar Tarafdar", email="kkt.compute@gmail.com" },
+]
+description = "Multidimensional linear and nonlinear Volterra kernel layers in wavelet and natural bases"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+  "tensorflow>=2.15",
+  "keras",
+  "TFDWT",
+]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Operating System :: OS Independent",
+  "Topic :: Scientific/Engineering",
+  "Intended Audience :: Science/Research"
+]
+license = "Apache-2.0"
+license-files = [ "LICENSE" ]
+
+[project.urls]
+Homepage = "https://github.com/kkt-ee/VolterraSys"
+Issues = "https://github.com/kkt-ee/VolterraSys/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["volterrasys"]
