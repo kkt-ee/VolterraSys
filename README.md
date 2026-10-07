@@ -5,14 +5,14 @@
 [![TensorFlow](https://img.shields.io/badge/tensorflow-required-darkorange)](https://www.tensorflow.org/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-deepgreen.svg?style=flat)](https://github.com/kkt-ee/VolterraSys/LICENSE)
 
-`VolterraSys` provides TensorFlow/Keras layers for trainable multidimensional linear and quadratic Volterra kernels in wavelet and natural bases.
+`VolterraSys` provides TensorFlow/Keras layers for trainable Volterra kernels in wavelet and natural bases, including general mth-order shift-variant 1D kernels.
 
-<!-- Copyright 2025 Kishore Kumar Tarafdar.
+<!-- Copyright 2026 Kishore Kumar Tarafdar.
 Licensed under the Apache License, Version 2.0. See [`LICENSE`](LICENSE). -->
 
 ## Capabilities
 
-- linear Volterra kernel layer for 1D data (shift variant): `linearVolterra1D`.
+- Shift-variant 1D kernels: `LinearVolterra1D` (m=1), `QuadraticVolterra1D` (m=2), and `Volterra1D(m=...)` for general order.
 - Linear shift invariant wavelet and natural basis Volterra kernel layers for 1D, 2D, 3D data: `LSIVolterra1D`, `LSIVolterra2D`, `LSIVolterra3D`.
 - Quadratic shift invariant wavelet and natural basis Volterra kernel layers for 1D, 2D, 3D data: `QSIVolterra1D`, `QSIVolterra2D`, `QSIVolterra3D`.
 - Multiresolution Volterra kernels with orthogonal wavelets such as `wave="haar"` (default) and biorthogonal wavelets `wave="bior1.3"`. Supports wavelet families: "db", "sym", "coif", "bior", "rbio"  
@@ -36,6 +36,8 @@ pip install VolterraSys
 ```python
 import tensorflow as tf
 
+from volterrasys.Volterra1D import Volterra1D
+
 # Linear shift invariant wavelet bases Volterra kernels
 from volterrasys.LSIVolterra1D import LSIVolterra1D
 from volterrasys.LSIVolterra2D import LSIVolterra2D
@@ -46,9 +48,12 @@ from volterrasys.QSIVolterra1D import QSIVolterra1D
 from volterrasys.QSIVolterra2D import QSIVolterra2D
 from volterrasys.QSIVolterra3D import QSIVolterra3D
 
-# Natural-domain linear and quadratic kernels layer examples
-# Linear
+# General mth-order shift-variant 1D kernel
 x1d = tf.random.normal([1, 32, 1])
+ym = Volterra1D(m=3, filters=2, Ny=16, wave="bior1.3")(x1d)
+
+# Natural-domain linear and quadratic kernel examples
+# Linear
 y1d = LSIVolterra1D(filters=2, kernel_size=3, wave=None)(x1d)
 
 # Quadratic
@@ -58,7 +63,7 @@ yq2d = QSIVolterra2D(filters=2, kernel_size=2, wave=None)(x2d)
 x3d = tf.random.normal([1, 6, 6, 6, 1])
 yq3d = QSIVolterra3D(filters=2, kernel_size=2, wave=None)(x3d)
 
-print(y1d.shape, yq2d.shape, yq3d.shape)
+print(ym.shape, y1d.shape, yq2d.shape, yq3d.shape)
 ```
 
 ## Wavelet domain kernel layer examples
