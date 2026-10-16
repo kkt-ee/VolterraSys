@@ -5,8 +5,10 @@ from TFDWT.DWT1DFB import DWT1D, IDWT1D
 from TFDWT.multilevel.dwt import dwt_packed_axis, idwt_packed_axis
 from ._wavelet_ops import (
     analysis_axis,
+    analysis_transpose_axis,
     natural_to_wavelet_kernel,
     synthesis_axis,
+    synthesis_transpose_axis,
     validate_backend,
     validate_level,
     wavelet_to_natural_kernel,
@@ -36,6 +38,8 @@ class Volterra1D(tf.keras.layers.Layer):
         wave='haar',
         backend='matrix',
         level=1,
+        kernel_parameterization='dense',
+        kernel_rank=None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -49,11 +53,36 @@ class Volterra1D(tf.keras.layers.Layer):
         self.Ny = Ny
         self.level = validate_level(level)
         self.backend = validate_backend(backend)
+        if kernel_parameterization not in ('dense', 'symmetric_cp'):
+            raise ValueError(
+                "kernel_parameterization must be 'dense' or "
+                "'symmetric_cp'."
+            )
+        if kernel_parameterization == 'dense':
+            if kernel_rank is not None:
+                raise ValueError(
+                    "kernel_rank is only used with "
+                    "kernel_parameterization='symmetric_cp'."
+                )
+        elif (
+            isinstance(kernel_rank, bool)
+            or not isinstance(kernel_rank, int)
+            or kernel_rank < 1
+        ):
+            raise ValueError(
+                "kernel_rank must be a positive integer when "
+                "kernel_parameterization='symmetric_cp'."
+            )
+        self.kernel_parameterization = kernel_parameterization
+        self.kernel_rank = kernel_rank
 
         self._make_einsum_equations()
 
     def _make_einsum_equations(self):
-        labels = [label for label in string.ascii_letters if label not in 'buo']
+        labels = [
+            label for label in string.ascii_letters
+            if label not in 'buor'
+        ]
         if 3 * self.m > len(labels):
             raise ValueError("m is too large for a single vectorized einsum.")
 
@@ -95,6 +124,18 @@ class Volterra1D(tf.keras.layers.Layer):
             + transformed_kernel_term
         )
 
+        factor_terms = [
+            input_index + channel_index + 'r'
+            for input_index, channel_index in zip(
+                input_indices, channel_indices
+            )
+        ]
+        self._factor_materialization_equation = (
+            ','.join(['uor'] + factor_terms)
+            + '->'
+            + kernel_term
+        )
+
     def build(self, input_shape):
         if input_shape[1] is None or input_shape[-1] is None:
             raise ValueError("The input length and channel count must be known.")
@@ -102,36 +143,90 @@ class Volterra1D(tf.keras.layers.Layer):
         self.N = int(input_shape[1])
         self.channels = int(input_shape[-1])
 
-        # hm[output, input_1, ..., input_m,
-        #    channel_1, ..., channel_m, filter].
-        kernel_shape = (
-            (self.Ny,)
-            + (self.N,) * self.m
-            + (self.channels,) * self.m
-            + (self.filters,)
-        )
-        initializer = 'glorot_uniform'
-        if self.mra:
-            def initialize_wavelet_kernel(shape, dtype=None):
-                natural_kernel = tf.keras.initializers.GlorotUniform()(
-                    shape,
-                    dtype=dtype,
-                )
-                return natural_to_wavelet_kernel(
-                    natural_kernel,
-                    self.wave,
-                    order=self.m,
-                    level=self.level,
-                )
-            initializer = initialize_wavelet_kernel
+        if self.kernel_parameterization == 'dense':
+            # hm[output, input_1, ..., input_m,
+            #    channel_1, ..., channel_m, filter].
+            kernel_shape = (
+                (self.Ny,)
+                + (self.N,) * self.m
+                + (self.channels,) * self.m
+                + (self.filters,)
+            )
+            initializer = 'glorot_uniform'
+            if self.mra:
+                def initialize_wavelet_kernel(shape, dtype=None):
+                    natural_kernel = tf.keras.initializers.GlorotUniform()(
+                        shape,
+                        dtype=dtype,
+                    )
+                    return natural_to_wavelet_kernel(
+                        natural_kernel,
+                        self.wave,
+                        order=self.m,
+                        level=self.level,
+                    )
+                initializer = initialize_wavelet_kernel
 
-        # The stored kernel is h in natural mode and H in wavelet mode.
-        self.hm = self.add_weight(
-            shape=kernel_shape,
-            initializer=initializer,
-            trainable=True,
-            name='kernel',
-        )
+            # The stored kernel is h in natural mode and H in wavelet mode.
+            self.hm = self.add_weight(
+                shape=kernel_shape,
+                initializer=initializer,
+                trainable=True,
+                name='kernel',
+            )
+        else:
+            input_factor_shape = (
+                self.N,
+                self.channels,
+                self.kernel_rank,
+            )
+            output_factor_shape = (
+                self.Ny,
+                self.filters,
+                self.kernel_rank,
+            )
+            input_initializer = 'glorot_uniform'
+            output_initializer = 'glorot_uniform'
+            if self.mra:
+                def initialize_wavelet_input_factors(shape, dtype=None):
+                    natural_factors = tf.keras.initializers.GlorotUniform()(
+                        shape,
+                        dtype=dtype,
+                    )
+                    return synthesis_transpose_axis(
+                        natural_factors,
+                        self.wave,
+                        axis=0,
+                        level=self.level,
+                    )
+
+                def initialize_wavelet_output_factors(shape, dtype=None):
+                    natural_factors = tf.keras.initializers.GlorotUniform()(
+                        shape,
+                        dtype=dtype,
+                    )
+                    return analysis_axis(
+                        natural_factors,
+                        self.wave,
+                        axis=0,
+                        level=self.level,
+                    )
+
+                input_initializer = initialize_wavelet_input_factors
+                output_initializer = initialize_wavelet_output_factors
+
+            self.input_factors = self.add_weight(
+                shape=input_factor_shape,
+                initializer=input_initializer,
+                trainable=True,
+                name='input_factors',
+            )
+            self.output_factors = self.add_weight(
+                shape=output_factor_shape,
+                initializer=output_initializer,
+                trainable=True,
+                name='output_factors',
+            )
 
         if self.mra and self.backend == 'matrix':
             def initialize_analysis(length):
@@ -186,7 +281,6 @@ class Volterra1D(tf.keras.layers.Layer):
         return self.__compute_output_in_natural_domain(x)
 
     def __compute_output_with_mra_kernel(self, x):
-        H = self.__make_H()
         if self.backend == 'matrix':
             alpha = tf.einsum('li,bic->blc', self.A_input, x)
         else:
@@ -196,11 +290,18 @@ class Volterra1D(tf.keras.layers.Layer):
                 axis=1,
                 level=self.level,
             )
-        beta = tf.einsum(
-            self._contraction_equation,
-            *([alpha] * self.m),
-            H,
-        )
+        if self.kernel_parameterization == 'dense':
+            beta = tf.einsum(
+                self._contraction_equation,
+                *([alpha] * self.m),
+                self.__make_H(),
+            )
+        else:
+            beta = self._contract_factorized(
+                alpha,
+                self.input_factors,
+                self.output_factors,
+            )
         if self.backend == 'matrix':
             return tf.einsum('uv,bvo->buo', self.S_output, beta)
         return synthesis_axis(
@@ -211,12 +312,69 @@ class Volterra1D(tf.keras.layers.Layer):
         )
 
     def __compute_output_in_natural_domain(self, x):
-        h = self.__make_h()
-        return tf.einsum(
-            self._contraction_equation,
-            *([x] * self.m),
-            h,
+        if self.kernel_parameterization == 'dense':
+            return tf.einsum(
+                self._contraction_equation,
+                *([x] * self.m),
+                self.__make_h(),
+            )
+        input_factors, output_factors = self._natural_factors()
+        return self._contract_factorized(
+            x,
+            input_factors,
+            output_factors,
         )
+
+    def _contract_factorized(
+        self,
+        x,
+        input_factors,
+        output_factors,
+    ):
+        projected = tf.einsum('bic,icr->br', x, input_factors)
+        monomials = tf.pow(projected, self.m)
+        return tf.einsum('br,uor->buo', monomials, output_factors)
+
+    def _natural_factors(self):
+        if not self.mra:
+            return self.input_factors, self.output_factors
+        return (
+            analysis_transpose_axis(
+                self.input_factors,
+                self.wave,
+                axis=0,
+                level=self.level,
+            ),
+            synthesis_axis(
+                self.output_factors,
+                self.wave,
+                axis=0,
+                level=self.level,
+            ),
+        )
+
+    def _materialize_factors(self, input_factors, output_factors):
+        return tf.einsum(
+            self._factor_materialization_equation,
+            output_factors,
+            *([input_factors] * self.m),
+        )
+
+    def materialize_kernel(self, domain=None):
+        """Materialize the implied dense kernel for inspection or testing."""
+        if not self.built:
+            raise ValueError("The layer must be built before materialization.")
+        if domain is None:
+            domain = 'wavelet' if self.mra else 'natural'
+        if domain not in ('natural', 'wavelet'):
+            raise ValueError("domain must be 'natural' or 'wavelet'.")
+        if domain == 'wavelet' and not self.mra:
+            raise ValueError(
+                "A natural-domain layer has no stored wavelet kernel."
+            )
+        if domain == 'wavelet':
+            return self.__make_H()
+        return self.__make_h()
 
     def sanity_check(self):
         return (
@@ -225,9 +383,20 @@ class Volterra1D(tf.keras.layers.Layer):
         )
 
     def __make_H(self):
+        if self.kernel_parameterization == 'symmetric_cp':
+            return self._materialize_factors(
+                self.input_factors,
+                self.output_factors,
+            )
         return self.hm
 
     def __make_h(self):
+        if self.kernel_parameterization == 'symmetric_cp':
+            input_factors, output_factors = self._natural_factors()
+            return self._materialize_factors(
+                input_factors,
+                output_factors,
+            )
         if not self.mra:
             return self.hm
         return wavelet_to_natural_kernel(
@@ -246,6 +415,8 @@ class Volterra1D(tf.keras.layers.Layer):
             'level': self.level,
             'filters': self.filters,
             'backend': self.backend,
+            'kernel_parameterization': self.kernel_parameterization,
+            'kernel_rank': self.kernel_rank,
         })
         return config
 

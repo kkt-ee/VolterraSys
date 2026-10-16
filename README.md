@@ -13,12 +13,13 @@ Licensed under the Apache License, Version 2.0. See [`LICENSE`](LICENSE). -->
 ## Capabilities
 
 - Volterra 1D kernels: `LinearVolterra1D` (m=1), `QuadraticVolterra1D` (m=2), and `Volterra1D(m=...)` for general order. These are general shift-variant Volterra kernels.
+- Optional input-symmetric canonical polyadic factorization in `Volterra1D` for rank-structured higher-order kernels.
 - Linear shift invariant (LSI) wavelet and natural basis Volterra kernel layers for 1D, 2D, 3D data: `LSIVolterra1D`, `LSIVolterra2D`, `LSIVolterra3D`.
 - Quadratic shift invariant (QSI) wavelet and natural basis Volterra kernel layers for 1D, 2D, 3D data: `QSIVolterra1D`, `QSIVolterra2D`, `QSIVolterra3D`.
 - Multiresolution Volterra kernels with orthogonal wavelets such as `wave="haar"` (default) and biorthogonal wavelets `wave="bior1.3"`. Supports wavelet families: "db", "sym", "coif", "bior", "rbio"  
 - Natural-domain kernels have `wave=None`.
 
-For general Volterra (1D I/O) kernels `LinearVolterra1D`, `QuadraticVolterra1D`, and `Volterra1D` layers, `wave=None` makes the trainable kernel the natural-domain kernel $h$. With a wavelet selected, the trainable kernel is the transform-domain coefficient tensor $H$ itself. The LSI and QSI layers retain their structured kernel parameterizations.
+For general Volterra (1D I/O) kernels `LinearVolterra1D`, `QuadraticVolterra1D`, and `Volterra1D` layers, `wave=None` uses natural coordinates. A selected wavelet uses transform coordinates. The default dense parameterization stores $h$ or $H$ directly. The optional factorized parameterization stores input and output factors in the selected coordinates. The LSI and QSI layers retain their structured kernel parameterizations.
 
 ## Dependencies
 
@@ -117,6 +118,33 @@ $H=A_{\mathrm{out},J}hS_{\mathrm{in},J}^{\otimes m}$, including for
 biorthogonal wavelets. Input and output lengths must be divisible by
 $2^J$, and the signal at every decomposition level must cover the selected
 wavelet-filter length. LSI and QSI layers currently remain single-level.
+
+## Rank-structured general kernels
+
+`Volterra1D` uses the unrestricted dense kernel by default. Select the
+input-symmetric canonical polyadic parameterization with a positive rank as
+follows.
+
+```python
+layer = Volterra1D(
+    m=3,
+    filters=2,
+    Ny=32,
+    wave="bior2.2",
+    backend="filterbank",
+    level=2,
+    kernel_parameterization="symmetric_cp",
+    kernel_rank=8,
+)
+y = layer(x1d)
+```
+
+For input size $P=NC$, output size $Q=N_yF$, and rank $R_m$, this path
+stores $R_m(P+Q)$ trainable values. It evaluates the implied Volterra kernel
+exactly without constructing its $QP^m$ dense tensor. A fixed small rank
+represents a structured subset of general symmetric kernels. Use
+`layer.materialize_kernel()` only for small diagnostic checks because it
+constructs the full dense tensor.
 
 ## Citation
 

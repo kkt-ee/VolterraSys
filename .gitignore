@@ -30,3 +30,7 @@ dependencies
 
 MakingOf...
 volterra-theory.pdf
+*.tex
+*.pdf
+*.md
+!README.md
