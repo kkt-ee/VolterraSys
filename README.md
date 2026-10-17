@@ -14,12 +14,13 @@ Licensed under the Apache License, Version 2.0. See [`LICENSE`](LICENSE). -->
 
 - Volterra 1D kernels: `LinearVolterra1D` (m=1), `QuadraticVolterra1D` (m=2), and `Volterra1D(m=...)` for general order. These are general shift-variant Volterra kernels.
 - Optional input-symmetric canonical polyadic factorization in `Volterra1D` for rank-structured higher-order kernels.
+- Optional sparse wavelet-coordinate kernels in `Volterra1D` with fixed active indices and trainable coefficient values.
 - Linear shift invariant (LSI) wavelet and natural basis Volterra kernel layers for 1D, 2D, 3D data: `LSIVolterra1D`, `LSIVolterra2D`, `LSIVolterra3D`.
 - Quadratic shift invariant (QSI) wavelet and natural basis Volterra kernel layers for 1D, 2D, 3D data: `QSIVolterra1D`, `QSIVolterra2D`, `QSIVolterra3D`.
 - Multiresolution Volterra kernels with orthogonal wavelets such as `wave="haar"` (default) and biorthogonal wavelets `wave="bior1.3"`. Supports wavelet families: "db", "sym", "coif", "bior", "rbio"  
 - Natural-domain kernels have `wave=None`.
 
-For general Volterra (1D I/O) kernels `LinearVolterra1D`, `QuadraticVolterra1D`, and `Volterra1D` layers, `wave=None` uses natural coordinates. A selected wavelet uses transform coordinates. The default dense parameterization stores $h$ or $H$ directly. The optional factorized parameterization stores input and output factors in the selected coordinates. The LSI and QSI layers retain their structured kernel parameterizations.
+For general Volterra (1D I/O) kernels `LinearVolterra1D`, `QuadraticVolterra1D`, and `Volterra1D` layers, `wave=None` uses natural coordinates. A selected wavelet uses transform coordinates. The default dense parameterization stores $h$ or $H$ directly. The optional factorized parameterization stores input and output factors in the selected coordinates. The optional sparse wavelet parameterization stores only specified entries of $H$. The LSI and QSI layers retain their structured kernel parameterizations.
 
 ## Dependencies
 
@@ -118,6 +119,44 @@ $H=A_{\mathrm{out},J}hS_{\mathrm{in},J}^{\otimes m}$, including for
 biorthogonal wavelets. Input and output lengths must be divisible by
 $2^J$, and the signal at every decomposition level must cover the selected
 wavelet-filter length. LSI and QSI layers currently remain single-level.
+
+## Sparse wavelet-coordinate kernels
+
+`Volterra1D` can store and evaluate only selected entries of a wavelet-domain
+kernel. Supply a nonempty list of unique integer index rows. Each row of
+`sparse_indices` follows the dense kernel axis order
+`[output_position, input_position_1, ..., input_position_m,
+channel_1, ..., channel_m, output_filter]`.
+
+```python
+indices = [
+    [0, 0, 0, 0, 0, 0],
+    [1, 1, 2, 0, 0, 0],
+    [3, 2, 1, 0, 0, 0],
+    [5, 3, 3, 0, 0, 0],
+]
+
+layer = Volterra1D(
+    m=2,
+    filters=1,
+    Ny=16,
+    wave="bior2.2",
+    backend="filterbank",
+    level=2,
+    kernel_parameterization="sparse_wavelet",
+    sparse_indices=indices,
+)
+y = layer(x1d)
+```
+
+The index set is fixed and the corresponding values are trainable. The
+forward path gathers the required input coefficients and accumulates their
+products directly into the output coefficients. It does not construct the
+dense kernel. The layer does not select or threshold coefficients
+automatically. Exact equivalence holds when the target wavelet kernel is zero
+outside the selected index set. Otherwise, the selected kernel defines a
+controlled approximation. `materialize_kernel()` is only for small diagnostic
+checks because it constructs the full dense tensor.
 
 ## Rank-structured general kernels
 

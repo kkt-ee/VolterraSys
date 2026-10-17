@@ -1,4 +1,5 @@
 import string
+from numbers import Integral
 
 import tensorflow as tf
 from TFDWT.DWT1DFB import DWT1D, IDWT1D
@@ -15,6 +16,43 @@ from ._wavelet_ops import (
 )
 
 
+def _normalize_sparse_indices(sparse_indices, width):
+    if sparse_indices is None:
+        raise ValueError(
+            "sparse_indices must be provided when "
+            "kernel_parameterization='sparse_wavelet'."
+        )
+    try:
+        rows = tuple(tuple(row) for row in sparse_indices)
+    except TypeError as error:
+        raise ValueError(
+            "sparse_indices must be a sequence of index rows."
+        ) from error
+    if not rows:
+        raise ValueError("sparse_indices must contain at least one row.")
+
+    normalized = []
+    for row in rows:
+        if len(row) != width:
+            raise ValueError(
+                f"Each sparse index row must contain {width} entries."
+            )
+        if any(
+            isinstance(value, bool) or not isinstance(value, Integral)
+            for value in row
+        ):
+            raise ValueError("sparse_indices entries must be integers.")
+        normalized_row = tuple(int(value) for value in row)
+        if any(value < 0 for value in normalized_row):
+            raise ValueError("sparse_indices entries must be nonnegative.")
+        normalized.append(normalized_row)
+
+    normalized = tuple(normalized)
+    if len(set(normalized)) != len(normalized):
+        raise ValueError("sparse_indices rows must be unique.")
+    return normalized
+
+
 # %% Shift-variant mth-order multiresolution Volterra kernel
 @tf.keras.utils.register_keras_serializable()
 class Volterra1D(tf.keras.layers.Layer):
@@ -26,6 +64,11 @@ class Volterra1D(tf.keras.layers.Layer):
 
     Input: sequence x[n]
     Output: mth-order monomial ym (shift variant)
+
+    With kernel_parameterization='sparse_wavelet', sparse_indices contains
+    fixed rows [output, input_1, ..., input_m, channel_1, ..., channel_m,
+    filter]. Only sparse_kernel_values is trained. No automatic thresholding
+    or dense kernel construction occurs during the forward computation.
 
     --@KKT, 06Oct2026
     """
@@ -40,6 +83,7 @@ class Volterra1D(tf.keras.layers.Layer):
         level=1,
         kernel_parameterization='dense',
         kernel_rank=None,
+        sparse_indices=None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -53,10 +97,14 @@ class Volterra1D(tf.keras.layers.Layer):
         self.Ny = Ny
         self.level = validate_level(level)
         self.backend = validate_backend(backend)
-        if kernel_parameterization not in ('dense', 'symmetric_cp'):
+        if kernel_parameterization not in (
+            'dense',
+            'symmetric_cp',
+            'sparse_wavelet',
+        ):
             raise ValueError(
-                "kernel_parameterization must be 'dense' or "
-                "'symmetric_cp'."
+                "kernel_parameterization must be 'dense', "
+                "'symmetric_cp', or 'sparse_wavelet'."
             )
         if kernel_parameterization == 'dense':
             if kernel_rank is not None:
@@ -64,7 +112,12 @@ class Volterra1D(tf.keras.layers.Layer):
                     "kernel_rank is only used with "
                     "kernel_parameterization='symmetric_cp'."
                 )
-        elif (
+            if sparse_indices is not None:
+                raise ValueError(
+                    "sparse_indices is only used with "
+                    "kernel_parameterization='sparse_wavelet'."
+                )
+        elif kernel_parameterization == 'symmetric_cp' and (
             isinstance(kernel_rank, bool)
             or not isinstance(kernel_rank, int)
             or kernel_rank < 1
@@ -73,8 +126,30 @@ class Volterra1D(tf.keras.layers.Layer):
                 "kernel_rank must be a positive integer when "
                 "kernel_parameterization='symmetric_cp'."
             )
+        elif kernel_parameterization == 'symmetric_cp':
+            if sparse_indices is not None:
+                raise ValueError(
+                    "sparse_indices is only used with "
+                    "kernel_parameterization='sparse_wavelet'."
+                )
+        else:
+            if not self.mra:
+                raise ValueError(
+                    "kernel_parameterization='sparse_wavelet' requires "
+                    "a wavelet name."
+                )
+            if kernel_rank is not None:
+                raise ValueError(
+                    "kernel_rank is only used with "
+                    "kernel_parameterization='symmetric_cp'."
+                )
+            sparse_indices = _normalize_sparse_indices(
+                sparse_indices,
+                width=2 * self.m + 2,
+            )
         self.kernel_parameterization = kernel_parameterization
         self.kernel_rank = kernel_rank
+        self.sparse_indices = sparse_indices
 
         self._make_einsum_equations()
 
@@ -143,15 +218,17 @@ class Volterra1D(tf.keras.layers.Layer):
         self.N = int(input_shape[1])
         self.channels = int(input_shape[-1])
 
+        # hm[output, input_1, ..., input_m,
+        #    channel_1, ..., channel_m, filter].
+        kernel_shape = (
+            (self.Ny,)
+            + (self.N,) * self.m
+            + (self.channels,) * self.m
+            + (self.filters,)
+        )
+        self._kernel_shape = kernel_shape
+
         if self.kernel_parameterization == 'dense':
-            # hm[output, input_1, ..., input_m,
-            #    channel_1, ..., channel_m, filter].
-            kernel_shape = (
-                (self.Ny,)
-                + (self.N,) * self.m
-                + (self.channels,) * self.m
-                + (self.filters,)
-            )
             initializer = 'glorot_uniform'
             if self.mra:
                 def initialize_wavelet_kernel(shape, dtype=None):
@@ -174,7 +251,7 @@ class Volterra1D(tf.keras.layers.Layer):
                 trainable=True,
                 name='kernel',
             )
-        else:
+        elif self.kernel_parameterization == 'symmetric_cp':
             input_factor_shape = (
                 self.N,
                 self.channels,
@@ -226,6 +303,43 @@ class Volterra1D(tf.keras.layers.Layer):
                 initializer=output_initializer,
                 trainable=True,
                 name='output_factors',
+            )
+        else:
+            for row in self.sparse_indices:
+                for axis, (index, limit) in enumerate(
+                    zip(row, kernel_shape)
+                ):
+                    if index >= limit:
+                        raise ValueError(
+                            "sparse_indices contains index "
+                            f"{index} outside axis {axis} with size {limit}."
+                        )
+
+            # Keep fixed indices available if build is first called while
+            # tracing a TensorFlow function.
+            with tf.init_scope():
+                self._sparse_input_indices = tuple(
+                    tf.constant(
+                        [
+                            (row[1 + mode], row[1 + self.m + mode])
+                            for row in self.sparse_indices
+                        ],
+                        dtype=tf.int32,
+                    )
+                    for mode in range(self.m)
+                )
+                self._sparse_output_segments = tf.constant(
+                    [
+                        row[0] * self.filters + row[-1]
+                        for row in self.sparse_indices
+                    ],
+                    dtype=tf.int32,
+                )
+            self.sparse_kernel_values = self.add_weight(
+                shape=(len(self.sparse_indices),),
+                initializer='glorot_uniform',
+                trainable=True,
+                name='kernel_values',
             )
 
         if self.mra and self.backend == 'matrix':
@@ -296,12 +410,14 @@ class Volterra1D(tf.keras.layers.Layer):
                 *([alpha] * self.m),
                 self.__make_H(),
             )
-        else:
+        elif self.kernel_parameterization == 'symmetric_cp':
             beta = self._contract_factorized(
                 alpha,
                 self.input_factors,
                 self.output_factors,
             )
+        else:
+            beta = self._contract_sparse(alpha)
         if self.backend == 'matrix':
             return tf.einsum('uv,bvo->buo', self.S_output, beta)
         return synthesis_axis(
@@ -313,6 +429,12 @@ class Volterra1D(tf.keras.layers.Layer):
 
     def __compute_output_in_natural_domain(self, x):
         if self.kernel_parameterization == 'dense':
+            return tf.einsum(
+                self._contraction_equation,
+                *([x] * self.m),
+                self.__make_h(),
+            )
+        if self.kernel_parameterization == 'sparse_wavelet':
             return tf.einsum(
                 self._contraction_equation,
                 *([x] * self.m),
@@ -334,6 +456,31 @@ class Volterra1D(tf.keras.layers.Layer):
         projected = tf.einsum('bic,icr->br', x, input_factors)
         monomials = tf.pow(projected, self.m)
         return tf.einsum('br,uor->buo', monomials, output_factors)
+
+    def _contract_sparse(self, alpha):
+        """Contract only active entries of H without a dense kernel tensor."""
+        alpha_by_coordinate = tf.transpose(alpha, (1, 2, 0))
+        monomials = None
+        for coordinates in self._sparse_input_indices:
+            values = tf.transpose(
+                tf.gather_nd(alpha_by_coordinate, coordinates)
+            )
+            if monomials is None:
+                monomials = values
+            else:
+                monomials = monomials * values
+
+        contributions = monomials * self.sparse_kernel_values[None, :]
+        segment_totals = tf.math.unsorted_segment_sum(
+            tf.transpose(contributions),
+            self._sparse_output_segments,
+            self.Ny * self.filters,
+        )
+        beta = tf.reshape(
+            segment_totals,
+            (self.Ny, self.filters, -1),
+        )
+        return tf.transpose(beta, (2, 0, 1))
 
     def _natural_factors(self):
         if not self.mra:
@@ -388,6 +535,28 @@ class Volterra1D(tf.keras.layers.Layer):
                 self.input_factors,
                 self.output_factors,
             )
+        if self.kernel_parameterization == 'sparse_wavelet':
+            # Flatten only for this diagnostic. TensorFlow ScatterNd does not
+            # support arbitrary-rank index rows on every backend.
+            kernel_size = 1
+            for length in self._kernel_shape:
+                kernel_size *= length
+            if kernel_size > 2**63 - 1:
+                raise ValueError(
+                    "The implied dense kernel is too large to materialize."
+                )
+            flat_indices = []
+            for row in self.sparse_indices:
+                flat_index = 0
+                for index, limit in zip(row, self._kernel_shape):
+                    flat_index = flat_index * limit + index
+                flat_indices.append((flat_index,))
+            flat_kernel = tf.scatter_nd(
+                tf.constant(flat_indices, dtype=tf.int64),
+                self.sparse_kernel_values,
+                tf.constant((kernel_size,), dtype=tf.int64),
+            )
+            return tf.reshape(flat_kernel, self._kernel_shape)
         return self.hm
 
     def __make_h(self):
@@ -400,7 +569,7 @@ class Volterra1D(tf.keras.layers.Layer):
         if not self.mra:
             return self.hm
         return wavelet_to_natural_kernel(
-            self.hm,
+            self.__make_H(),
             self.wave,
             order=self.m,
             level=self.level,
@@ -417,6 +586,11 @@ class Volterra1D(tf.keras.layers.Layer):
             'backend': self.backend,
             'kernel_parameterization': self.kernel_parameterization,
             'kernel_rank': self.kernel_rank,
+            'sparse_indices': (
+                None
+                if self.sparse_indices is None
+                else [list(row) for row in self.sparse_indices]
+            ),
         })
         return config
 
