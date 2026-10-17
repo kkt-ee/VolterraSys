@@ -13,6 +13,7 @@ Licensed under the Apache License, Version 2.0. See [`LICENSE`](LICENSE). -->
 ## Capabilities
 
 - Volterra 1D kernels: `LinearVolterra1D` (m=1), `QuadraticVolterra1D` (m=2), and `Volterra1D(m=...)` for general order. These are general shift-variant Volterra kernels.
+- Exact input-symmetric storage in `Volterra1D`. It stores each independent coefficient once and requires no user-supplied support.
 - Optional input-symmetric canonical polyadic factorization in `Volterra1D` for rank-structured higher-order kernels.
 - Optional sparse wavelet-coordinate kernels in `Volterra1D` with fixed active indices and trainable coefficient values.
 - Linear shift invariant (LSI) wavelet and natural basis Volterra kernel layers for 1D, 2D, 3D data: `LSIVolterra1D`, `LSIVolterra2D`, `LSIVolterra3D`.
@@ -20,7 +21,7 @@ Licensed under the Apache License, Version 2.0. See [`LICENSE`](LICENSE). -->
 - Multiresolution Volterra kernels with orthogonal wavelets such as `wave="haar"` (default) and biorthogonal wavelets `wave="bior1.3"`. Supports wavelet families: "db", "sym", "coif", "bior", "rbio"  
 - Natural-domain kernels have `wave=None`.
 
-For general Volterra (1D I/O) kernels `LinearVolterra1D`, `QuadraticVolterra1D`, and `Volterra1D` layers, `wave=None` uses natural coordinates. A selected wavelet uses transform coordinates. The default dense parameterization stores $h$ or $H$ directly. The optional factorized parameterization stores input and output factors in the selected coordinates. The optional sparse wavelet parameterization stores only specified entries of $H$. The LSI and QSI layers retain their structured kernel parameterizations.
+For general Volterra (1D I/O) kernels `LinearVolterra1D`, `QuadraticVolterra1D`, and `Volterra1D` layers, `wave=None` uses natural coordinates. A selected wavelet uses transform coordinates. The default dense parameterization stores $h$ or $H$ directly. The exact symmetric parameterization stores every independent input-symmetric coefficient once. The optional factorized parameterization stores input and output factors in the selected coordinates. The optional sparse wavelet parameterization stores only specified entries of $H$. The LSI and QSI layers retain their structured kernel parameterizations.
 
 ## Dependencies
 
@@ -119,6 +120,35 @@ $H=A_{\mathrm{out},J}hS_{\mathrm{in},J}^{\otimes m}$, including for
 biorthogonal wavelets. Input and output lengths must be divisible by
 $2^J$, and the signal at every decomposition level must cover the selected
 wavelet-filter length. LSI and QSI layers currently remain single-level.
+
+## Exact input-symmetric kernels
+
+Every order-$m$ Volterra map has a unique input-symmetric kernel. The
+`symmetric` parameterization stores each nondecreasing tuple of the $P=NC$
+input coordinates once. It stores
+$N_yF\binom{P+m-1}{m}$ trainable values instead of $N_yFP^m$ values. The
+forward path applies the exact permutation multiplicity of each tuple. It
+does not construct the dense kernel.
+
+```python
+layer = Volterra1D(
+    m=3,
+    filters=2,
+    Ny=32,
+    wave="bior2.2",  # Use None for natural coordinates.
+    backend="filterbank",
+    level=2,
+    kernel_parameterization="symmetric",
+)
+y = layer(x1d)
+```
+
+This mode supports natural, orthogonal-wavelet, and biorthogonal-wavelet
+coordinates. It is exact for general Volterra maps because only the symmetric
+part of a kernel contributes when the same input enters every input mode. It
+does not require `sparse_indices`. The coefficient count still grows quickly
+with order. `materialize_kernel()` is intended only for small diagnostic
+checks because it constructs the full dense tensor.
 
 ## Sparse wavelet-coordinate kernels
 

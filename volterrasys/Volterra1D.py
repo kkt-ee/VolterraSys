@@ -1,4 +1,6 @@
 import string
+from itertools import combinations_with_replacement
+from math import factorial
 from numbers import Integral
 
 import tensorflow as tf
@@ -53,6 +55,40 @@ def _normalize_sparse_indices(sparse_indices, width):
     return normalized
 
 
+def _canonical_input_tuples(input_size, order):
+    """Return all nondecreasing flattened input-index tuples."""
+    return tuple(combinations_with_replacement(range(input_size), order))
+
+
+def _permutation_multiplicity(input_indices):
+    """Return the number of distinct permutations of one canonical tuple."""
+    multiplicity = factorial(len(input_indices))
+    run_length = 1
+    for previous, current in zip(
+        input_indices[:-1],
+        input_indices[1:],
+    ):
+        if current == previous:
+            run_length += 1
+        else:
+            multiplicity //= factorial(run_length)
+            run_length = 1
+    return multiplicity // factorial(run_length)
+
+
+def _unique_permutations(items):
+    """Yield the distinct permutations of a sorted tuple."""
+    if not items:
+        yield ()
+        return
+    for index, item in enumerate(items):
+        if index and item == items[index - 1]:
+            continue
+        remaining = items[:index] + items[index + 1:]
+        for suffix in _unique_permutations(remaining):
+            yield (item,) + suffix
+
+
 # %% Shift-variant mth-order multiresolution Volterra kernel
 @tf.keras.utils.register_keras_serializable()
 class Volterra1D(tf.keras.layers.Layer):
@@ -64,6 +100,9 @@ class Volterra1D(tf.keras.layers.Layer):
 
     Input: sequence x[n]
     Output: mth-order monomial ym (shift variant)
+
+    kernel_parameterization='symmetric' stores every input-symmetric kernel
+    coefficient once in canonical order. No support indices are supplied.
 
     With kernel_parameterization='sparse_wavelet', sparse_indices contains
     fixed rows [output, input_1, ..., input_m, channel_1, ..., channel_m,
@@ -99,25 +138,29 @@ class Volterra1D(tf.keras.layers.Layer):
         self.backend = validate_backend(backend)
         if kernel_parameterization not in (
             'dense',
+            'symmetric',
             'symmetric_cp',
             'sparse_wavelet',
         ):
             raise ValueError(
                 "kernel_parameterization must be 'dense', "
-                "'symmetric_cp', or 'sparse_wavelet'."
+                "'symmetric', 'symmetric_cp', or 'sparse_wavelet'."
             )
-        if kernel_parameterization == 'dense':
-            if kernel_rank is not None:
-                raise ValueError(
-                    "kernel_rank is only used with "
-                    "kernel_parameterization='symmetric_cp'."
-                )
-            if sparse_indices is not None:
-                raise ValueError(
-                    "sparse_indices is only used with "
-                    "kernel_parameterization='sparse_wavelet'."
-                )
-        elif kernel_parameterization == 'symmetric_cp' and (
+        if kernel_parameterization != 'symmetric_cp' and (
+            kernel_rank is not None
+        ):
+            raise ValueError(
+                "kernel_rank is only used with "
+                "kernel_parameterization='symmetric_cp'."
+            )
+        if kernel_parameterization != 'sparse_wavelet' and (
+            sparse_indices is not None
+        ):
+            raise ValueError(
+                "sparse_indices is only used with "
+                "kernel_parameterization='sparse_wavelet'."
+            )
+        if kernel_parameterization == 'symmetric_cp' and (
             isinstance(kernel_rank, bool)
             or not isinstance(kernel_rank, int)
             or kernel_rank < 1
@@ -126,22 +169,11 @@ class Volterra1D(tf.keras.layers.Layer):
                 "kernel_rank must be a positive integer when "
                 "kernel_parameterization='symmetric_cp'."
             )
-        elif kernel_parameterization == 'symmetric_cp':
-            if sparse_indices is not None:
-                raise ValueError(
-                    "sparse_indices is only used with "
-                    "kernel_parameterization='sparse_wavelet'."
-                )
-        else:
+        if kernel_parameterization == 'sparse_wavelet':
             if not self.mra:
                 raise ValueError(
                     "kernel_parameterization='sparse_wavelet' requires "
                     "a wavelet name."
-                )
-            if kernel_rank is not None:
-                raise ValueError(
-                    "kernel_rank is only used with "
-                    "kernel_parameterization='symmetric_cp'."
                 )
             sparse_indices = _normalize_sparse_indices(
                 sparse_indices,
@@ -248,6 +280,39 @@ class Volterra1D(tf.keras.layers.Layer):
             self.hm = self.add_weight(
                 shape=kernel_shape,
                 initializer=initializer,
+                trainable=True,
+                name='kernel',
+            )
+        elif self.kernel_parameterization == 'symmetric':
+            self._symmetric_input_tuples = _canonical_input_tuples(
+                self.N * self.channels,
+                self.m,
+            )
+            with tf.init_scope():
+                self._symmetric_input_indices = tuple(
+                    tf.constant(
+                        [
+                            indices[mode]
+                            for indices in self._symmetric_input_tuples
+                        ],
+                        dtype=tf.int32,
+                    )
+                    for mode in range(self.m)
+                )
+                self._symmetric_multiplicities = tf.constant(
+                    [
+                        _permutation_multiplicity(indices)
+                        for indices in self._symmetric_input_tuples
+                    ],
+                    dtype=self.compute_dtype,
+                )
+            self.symmetric_kernel_values = self.add_weight(
+                shape=(
+                    self.Ny,
+                    len(self._symmetric_input_tuples),
+                    self.filters,
+                ),
+                initializer='glorot_uniform',
                 trainable=True,
                 name='kernel',
             )
@@ -410,6 +475,8 @@ class Volterra1D(tf.keras.layers.Layer):
                 *([alpha] * self.m),
                 self.__make_H(),
             )
+        elif self.kernel_parameterization == 'symmetric':
+            beta = self._contract_symmetric(alpha)
         elif self.kernel_parameterization == 'symmetric_cp':
             beta = self._contract_factorized(
                 alpha,
@@ -429,6 +496,14 @@ class Volterra1D(tf.keras.layers.Layer):
 
     def __compute_output_in_natural_domain(self, x):
         if self.kernel_parameterization == 'dense':
+            return tf.einsum(
+                self._contraction_equation,
+                *([x] * self.m),
+                self.__make_h(),
+            )
+        if self.kernel_parameterization == 'symmetric':
+            if not self.mra:
+                return self._contract_symmetric(x)
             return tf.einsum(
                 self._contraction_equation,
                 *([x] * self.m),
@@ -456,6 +531,26 @@ class Volterra1D(tf.keras.layers.Layer):
         projected = tf.einsum('bic,icr->br', x, input_factors)
         monomials = tf.pow(projected, self.m)
         return tf.einsum('br,uor->buo', monomials, output_factors)
+
+    def _contract_symmetric(self, coordinates):
+        """Contract one canonical coefficient per input-permutation orbit."""
+        flattened_input = tf.reshape(
+            coordinates,
+            (-1, self.N * self.channels),
+        )
+        monomials = None
+        for indices in self._symmetric_input_indices:
+            values = tf.gather(flattened_input, indices, axis=1)
+            if monomials is None:
+                monomials = values
+            else:
+                monomials = monomials * values
+        monomials = monomials * self._symmetric_multiplicities[None, :]
+        return tf.einsum(
+            'bt,utf->buf',
+            monomials,
+            self.symmetric_kernel_values,
+        )
 
     def _contract_sparse(self, alpha):
         """Contract only active entries of H without a dense kernel tensor."""
@@ -530,6 +625,8 @@ class Volterra1D(tf.keras.layers.Layer):
         )
 
     def __make_H(self):
+        if self.kernel_parameterization == 'symmetric':
+            return self._materialize_symmetric_kernel()
         if self.kernel_parameterization == 'symmetric_cp':
             return self._materialize_factors(
                 self.input_factors,
@@ -559,6 +656,62 @@ class Volterra1D(tf.keras.layers.Layer):
             return tf.reshape(flat_kernel, self._kernel_shape)
         return self.hm
 
+    def _materialize_symmetric_kernel(self):
+        """Materialize the exact symmetric tensor for diagnostics."""
+        kernel_size = 1
+        for length in self._kernel_shape:
+            kernel_size *= length
+        if kernel_size > 2**63 - 1:
+            raise ValueError(
+                "The implied dense kernel is too large to materialize."
+            )
+
+        flat_indices = []
+        packed_indices = []
+        tuple_count = len(self._symmetric_input_tuples)
+        for tuple_index, input_indices in enumerate(
+            self._symmetric_input_tuples
+        ):
+            for permutation in _unique_permutations(input_indices):
+                for output_index in range(self.Ny):
+                    for filter_index in range(self.filters):
+                        input_coordinates = tuple(
+                            divmod(index, self.channels)
+                            for index in permutation
+                        )
+                        row = (
+                            (output_index,)
+                            + tuple(
+                                position
+                                for position, _ in input_coordinates
+                            )
+                            + tuple(
+                                channel
+                                for _, channel in input_coordinates
+                            )
+                            + (filter_index,)
+                        )
+                        flat_index = 0
+                        for index, limit in zip(row, self._kernel_shape):
+                            flat_index = flat_index * limit + index
+                        flat_indices.append((flat_index,))
+                        packed_indices.append(
+                            (
+                                output_index * tuple_count
+                                + tuple_index
+                            ) * self.filters
+                            + filter_index
+                        )
+        flat_kernel = tf.scatter_nd(
+            tf.constant(flat_indices, dtype=tf.int64),
+            tf.gather(
+                tf.reshape(self.symmetric_kernel_values, (-1,)),
+                packed_indices,
+            ),
+            tf.constant((kernel_size,), dtype=tf.int64),
+        )
+        return tf.reshape(flat_kernel, self._kernel_shape)
+
     def __make_h(self):
         if self.kernel_parameterization == 'symmetric_cp':
             input_factors, output_factors = self._natural_factors()
@@ -567,6 +720,8 @@ class Volterra1D(tf.keras.layers.Layer):
                 output_factors,
             )
         if not self.mra:
+            if self.kernel_parameterization == 'symmetric':
+                return self.__make_H()
             return self.hm
         return wavelet_to_natural_kernel(
             self.__make_H(),
