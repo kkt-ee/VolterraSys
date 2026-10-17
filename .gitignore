@@ -34,3 +34,5 @@ volterra-theory.pdf
 *.pdf
 *.md
 !README.md
+figures
+benchmarks

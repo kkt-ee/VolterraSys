@@ -15,13 +15,13 @@ Licensed under the Apache License, Version 2.0. See [`LICENSE`](LICENSE). -->
 - Volterra 1D kernels: `LinearVolterra1D` (m=1), `QuadraticVolterra1D` (m=2), and `Volterra1D(m=...)` for general order. These are general shift-variant Volterra kernels.
 - Exact input-symmetric storage in `Volterra1D`. It stores each independent coefficient once and requires no user-supplied support.
 - Optional input-symmetric canonical polyadic factorization in `Volterra1D` for rank-structured higher-order kernels.
-- Optional sparse wavelet-coordinate kernels in `Volterra1D` with fixed active indices and trainable coefficient values.
+- Optional sparse wavelet-coordinate kernels in `Volterra1D` with fixed user-supplied support or adaptive symmetric support of constant size.
 - Linear shift invariant (LSI) wavelet and natural basis Volterra kernel layers for 1D, 2D, 3D data: `LSIVolterra1D`, `LSIVolterra2D`, `LSIVolterra3D`.
 - Quadratic shift invariant (QSI) wavelet and natural basis Volterra kernel layers for 1D, 2D, 3D data: `QSIVolterra1D`, `QSIVolterra2D`, `QSIVolterra3D`.
 - Multiresolution Volterra kernels with orthogonal wavelets such as `wave="haar"` (default) and biorthogonal wavelets `wave="bior1.3"`. Supports wavelet families: "db", "sym", "coif", "bior", "rbio"  
 - Natural-domain kernels have `wave=None`.
 
-For general Volterra (1D I/O) kernels `LinearVolterra1D`, `QuadraticVolterra1D`, and `Volterra1D` layers, `wave=None` uses natural coordinates. A selected wavelet uses transform coordinates. The default dense parameterization stores $h$ or $H$ directly. The exact symmetric parameterization stores every independent input-symmetric coefficient once. The optional factorized parameterization stores input and output factors in the selected coordinates. The optional sparse wavelet parameterization stores only specified entries of $H$. The LSI and QSI layers retain their structured kernel parameterizations.
+For general Volterra (1D I/O) kernels `LinearVolterra1D`, `QuadraticVolterra1D`, and `Volterra1D` layers, `wave=None` uses natural coordinates. A selected wavelet uses transform coordinates. The default dense parameterization stores $h$ or $H$ directly. The exact symmetric parameterization stores every independent input-symmetric coefficient once. The optional factorized parameterization stores input and output factors in the selected coordinates. The optional sparse wavelet parameterization stores a fixed-size subset of $H$. The LSI and QSI layers retain their structured kernel parameterizations.
 
 ## Dependencies
 
@@ -174,6 +174,7 @@ layer = Volterra1D(
     backend="filterbank",
     level=2,
     kernel_parameterization="sparse_wavelet",
+    sparse_support="fixed",
     sparse_indices=indices,
 )
 y = layer(x1d)
@@ -187,6 +188,56 @@ automatically. Exact equivalence holds when the target wavelet kernel is zero
 outside the selected index set. Otherwise, the selected kernel defines a
 controlled approximation. `materialize_kernel()` is only for small diagnostic
 checks because it constructs the full dense tensor.
+
+Adaptive support does not require predefined coefficient locations. It stores
+`sparse_budget` canonical input-symmetric wavelet coefficients. Every
+canonical coefficient includes the exact multiplicity of its input-index
+permutations.
+
+```python
+from volterrasys.adaptive_wavelet_support import AdaptiveWaveletSupport
+
+layer = Volterra1D(
+    m=2,
+    filters=1,
+    Ny=16,
+    wave="bior2.2",
+    backend="filterbank",
+    level=2,
+    kernel_parameterization="sparse_wavelet",
+    sparse_support="adaptive",
+    sparse_budget=256,
+    sparse_seed=7,
+)
+y = layer(x1d)
+
+controller = AdaptiveWaveletSupport(
+    layer,
+    replacement_fraction=0.1,
+    candidate_multiplier=4,
+    seed=11,
+)
+update = controller.refresh(
+    model,
+    batch_x,
+    batch_y,
+    loss_fn,
+    optimizer=optimizer,
+)
+```
+
+Call `refresh` explicitly between optimizer steps at the chosen update
+interval. The controller prunes active entries using
+$|\theta_i\,\partial L/\partial\theta_i|$. It samples inactive canonical
+locations and grows those with the largest zero-value gradient magnitudes.
+New values start at zero. The support size remains constant, optimizer state
+for replaced values is reset, and the layer forward method never changes its
+support. Stop calling `refresh` to freeze the learned support.
+
+The adaptive contraction is exact for the current sparse symmetric wavelet
+kernel. It is an approximation to an unrestricted kernel unless omitted
+coefficients are zero. Support selection is a discrete training heuristic and
+does not guarantee the best support or convergence.
 
 ## Rank-structured general kernels
 
